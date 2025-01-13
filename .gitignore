@@ -1,0 +1,14 @@
+# Ignore all log files
+*.log
+
+# Ignore entire folders
+/Preprocessing/__pycache__/
+/Preprocessing/data/
+/Segmentation/__pycache__/
+/Segmentation/myenv/
+/Segmentation/Segmentation_output/
+/Segmentation/Unet/__pycache__/
+/Segmentation/UnetNested/__pycache__/
+/Segmentation/
+/LIDC-IDRI Dataset/
+
