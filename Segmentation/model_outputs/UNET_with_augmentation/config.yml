@@ -1,0 +1,11 @@
+augmentation: true
+batch_size: 12
+early_stopping: 50
+epochs: 400
+lr: 1.0e-05
+momentum: 0.9
+name: UNET
+nesterov: false
+num_workers: 8
+optimizer: Adam
+weight_decay: 0.0001
