@@ -15,6 +15,8 @@ from torch.optim.lr_scheduler import StepLR #Added this
 # cudnn.benchmark = True
 # cudnn.deterministic = False
 
+from sklearn.model_selection import KFold
+
 import albumentations as albu
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
@@ -44,7 +46,7 @@ def parse_args():
                         metavar='N', help='mini-batch size (default: 6)')
     parser.add_argument('--early_stopping', default=20, type=int,
                         metavar='N', help='early stopping (default: 50)')
-    parser.add_argument('--num_workers', default=8, type=int)
+    parser.add_argument('--num_workers', default=12, type=int)
 
     # optimizer
     parser.add_argument('--optimizer', default='Adam',
@@ -261,8 +263,6 @@ def main():
 
     best_dice = 0
     trigger = 0
-
-
 
     for epoch in range(config['epochs']):
 
