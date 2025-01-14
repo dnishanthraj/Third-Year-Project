@@ -10,6 +10,7 @@ import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim import lr_scheduler
+from torch.optim.lr_scheduler import StepLR #Added this
 
 # cudnn.benchmark = True
 # cudnn.deterministic = False
@@ -39,9 +40,9 @@ def parse_args():
                         help='model name: UNET',choices=['UNET', 'NestedUNET'])
     parser.add_argument('--epochs', default=130, type=int, metavar='N',
                         help='number of total epochs to run')
-    parser.add_argument('-b', '--batch_size', default=12, type=int, #Changed default to 4 from 12
+    parser.add_argument('-b', '--batch_size', default=8, type=int, #Changed default to 4 from 12
                         metavar='N', help='mini-batch size (default: 6)')
-    parser.add_argument('--early_stopping', default=50, type=int,
+    parser.add_argument('--early_stopping', default=20, type=int,
                         metavar='N', help='early stopping (default: 50)')
     parser.add_argument('--num_workers', default=8, type=int)
 
@@ -204,6 +205,8 @@ def main():
     else:
         raise NotImplementedError
 
+    # ADD LEARNING RATE SCHEDULER HERE
+    scheduler = StepLR(optimizer, step_size=40, gamma=0.8)  # Reducing LR by 10% every 50 epochs
 
     # Directory of Image, Mask folder generated from the preprocessing stage ###
     # Write your own directory                                                 #
@@ -245,14 +248,14 @@ def main():
         shuffle=True,
         pin_memory=True,
         drop_last=True,
-        num_workers=6)
+        num_workers=12) # Changed num workers from 6.
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=config['batch_size'],
         shuffle=False,
         pin_memory=True,
         drop_last=False,
-        num_workers=6)
+        num_workers=12)
 
     log= pd.DataFrame(index=[],columns= ['epoch','lr','loss','iou','dice','val_loss','val_iou'])
 
@@ -295,6 +298,7 @@ def main():
             print("=> saved best model as validation DICE is greater than previous best DICE")
             trigger = 0
 
+        scheduler.step()
         # early stopping
         if config['early_stopping'] >= 0 and trigger >= config['early_stopping']:
             print("=> early stopping")

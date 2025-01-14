@@ -25,6 +25,9 @@ class MyLidcDataset(Dataset):
         self.albu_transformations =  albu.Compose([
             albu.ElasticTransform(alpha=1.1,alpha_affine=0.5,sigma=5,p=0.15),
             albu.HorizontalFlip(p=0.15),
+            # albu.GaussNoise(var_limit=(10.0, 50.0), p=0.15),
+            # albu.ElasticTransform(alpha=1.1, alpha_affine=0.5, sigma=5, p=0.15),
+            # albu.HorizontalFlip(p=0.15),
             ToTensorV2()
         ])
         self.transformations = transforms.Compose([transforms.ToTensor()])
