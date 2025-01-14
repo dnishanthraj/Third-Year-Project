@@ -83,6 +83,7 @@ def train(train_loader, model, criterion, optimizer):
     model.train()
 
     pbar = tqdm(total=len(train_loader))
+
     for input, target in train_loader:
 
         input = input.cuda()
@@ -213,8 +214,9 @@ def main():
     # Directory of Image, Mask folder generated from the preprocessing stage ###
     # Write your own directory                                                 #
     IMAGE_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Preprocessing/data/Image/'                                       #
-    MASK_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Preprocessing/data/Mask/'                                         #
-    #Meta Information                                                          #
+    MASK_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Preprocessing/data/Mask/'      
+                                       #
+    #Meta Information   - going to implement k-fold here                                                       #
     meta = pd.read_csv('/dcs/22/u2202609/year_3/cs310/Project/Preprocessing/csv/meta.csv')                    #
     ############################################################################
     # Get train/test label from meta.csv
