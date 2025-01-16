@@ -7,7 +7,7 @@ from torch.utils.data.dataset import Dataset
 import torchvision.transforms.functional as TF
 import torchvision
 from torchvision import transforms
-from sklearn.model_selection import KFold
+
 
 import albumentations as albu
 from albumentations.pytorch import ToTensorV2
@@ -26,8 +26,8 @@ class MyLidcDataset(Dataset):
         self.albu_transformations =  albu.Compose([
             albu.ElasticTransform(alpha=1.1,alpha_affine=0.5,sigma=5,p=0.15),
             albu.HorizontalFlip(p=0.15),
-            # albu.GaussNoise(var_limit=(10.0, 50.0), p=0.15),
-            # albu.ElasticTransform(alpha=1.1, alpha_affine=0.5, sigma=5, p=0.15),
+            albu.GaussNoise(var_limit=(10.0, 50.0), p=0.15),
+            albu.ElasticTransform(alpha=1.1, alpha_affine=0.5, sigma=5, p=0.15),
             # albu.HorizontalFlip(p=0.15),
             ToTensorV2()
         ])

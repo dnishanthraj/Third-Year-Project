@@ -1,3 +1,4 @@
+### NEED TO FIX: See why not syncing epochs with folds, and why fold lengths vary each fold. Fix!
 import pandas as pd
 import argparse
 import os
@@ -40,13 +41,13 @@ def parse_args():
     # model
     parser.add_argument('--name', default="UNET",
                         help='model name: UNET',choices=['UNET', 'NestedUNET'])
-    parser.add_argument('--epochs', default=130, type=int, metavar='N',
+    parser.add_argument('--epochs', default=120, type=int, metavar='N',
                         help='number of total epochs to run')
-    parser.add_argument('-b', '--batch_size', default=8, type=int, #Changed default to 4 from 12
+    parser.add_argument('-b', '--batch_size', default=4, type=int, #Changed default to 4 from 12
                         metavar='N', help='mini-batch size (default: 6)')
     parser.add_argument('--early_stopping', default=20, type=int,
                         metavar='N', help='early stopping (default: 50)')
-    parser.add_argument('--num_workers', default=12, type=int)
+    parser.add_argument('--num_workers', default=6, type=int)
 
     # optimizer
     parser.add_argument('--optimizer', default='Adam',
@@ -225,88 +226,145 @@ def main():
 
     train_meta = meta[meta['data_split']=='Train']
     val_meta = meta[meta['data_split']=='Validation']
+    all_meta = pd.concat([train_meta, val_meta], ignore_index=True)
 
-    # Get all *npy images into list for Train
-    train_image_paths = list(train_meta['original_image'])
-    train_mask_paths = list(train_meta['mask_image'])
+    # # Get all *npy images into list for Train
+    # train_image_paths = list(train_meta['original_image'])
+    # train_mask_paths = list(train_meta['mask_image'])
 
-    # Get all *npy images into list for Validation
-    val_image_paths = list(val_meta['original_image'])
-    val_mask_paths = list(val_meta['mask_image'])
-    print("*"*50)
-    print("The lenght of image: {}, mask folders: {} for train".format(len(train_image_paths),len(train_mask_paths)))
-    print("The lenght of image: {}, mask folders: {} for validation".format(len(val_image_paths),len(val_mask_paths)))
-    print("Ratio between Val/ Train is {:2f}".format(len(val_image_paths)/len(train_image_paths)))
-    print("*"*50)
+    # # Get all *npy images into list for Validation
+    # val_image_paths = list(val_meta['original_image'])
+    # val_mask_paths = list(val_meta['mask_image']
 
 
+    # Can I check train_meta length?
 
-    # Create Dataset
-    train_dataset = MyLidcDataset(train_image_paths, train_mask_paths,config['augmentation'])
-    val_dataset = MyLidcDataset(val_image_paths,val_mask_paths,config['augmentation'])
-    #test_dataset = MyLidcDataset(test_image_paths, test_mask_paths)
-    # Create Dataloader
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=config['batch_size'],
-        shuffle=True,
-        pin_memory=True,
-        drop_last=True,
-        num_workers=12) # Changed num workers from 6.
-    val_loader = torch.utils.data.DataLoader(
-        val_dataset,
-        batch_size=config['batch_size'],
-        shuffle=False,
-        pin_memory=True,
-        drop_last=False,
-        num_workers=12)
 
-    log= pd.DataFrame(index=[],columns= ['epoch','lr','loss','iou','dice','val_loss','val_iou'])
+    # Prepare the dataset for k-fold (all data combined)
+    all_image_paths = list(all_meta['original_image'])
+    all_mask_paths = list(all_meta['mask_image'])
 
+    
+    # Set up 5-Fold Cross Validation
+    kf = KFold(n_splits=3, shuffle=True, random_state=26)
+
+    # Create a DataFrame to store averaged results across folds
+    log = pd.DataFrame(columns=['epoch', 'lr', 'loss', 'iou', 'dice', 'val_loss', 'val_iou'])
+
+    # Initialize the metric storage
     best_dice = 0
     trigger = 0
 
     for epoch in range(config['epochs']):
+    # Initialize K-Fold
+        # Initialize metric accumulators for averaging across folds
+        epoch_metrics = {'loss': [], 'iou': [], 'dice': [], 'val_loss': [], 'val_iou': [], 'val_dice': []}
+        
+        # K-Fold Loop: Each fold gets a separate train/validation split per epoch
+        for fold, (train_idx, val_idx) in enumerate(kf.split(all_image_paths)):
 
-        # train for one epoch
-        train_log = train(train_loader, model, criterion, optimizer)
-        # evaluate on validation set
-        val_log = validate(val_loader, model, criterion)
+            print(f"\nStarting Fold {fold + 1} of {kf.get_n_splits()}")
+        
+            # Prepare train/validation sets for this fold
+            train_image_paths = [all_image_paths[i] for i in train_idx]
+            train_mask_paths = [all_mask_paths[i] for i in train_idx]
+            val_image_paths = [all_image_paths[i] for i in val_idx]
+            val_mask_paths = [all_mask_paths[i] for i in val_idx]
+
+            # Create Dataset and Dataloaders for this fold
+            train_dataset = MyLidcDataset(train_image_paths, train_mask_paths, config['augmentation'])
+            val_dataset = MyLidcDataset(val_image_paths, val_mask_paths, config['augmentation'])
+
+            train_loader = torch.utils.data.DataLoader(
+                train_dataset,
+                batch_size=config['batch_size'],
+                shuffle=True,
+                pin_memory=True,
+                drop_last=True,
+                num_workers=6) # Changed num workers from 6.
+            val_loader = torch.utils.data.DataLoader(
+                val_dataset,
+                batch_size=config['batch_size'],
+                shuffle=False,
+                pin_memory=True,
+                drop_last=False,
+                num_workers=6)
+
+            # Train and validate for this fold
+            train_log = train(train_loader, model, criterion, optimizer)
+            val_log = validate(val_loader, model, criterion)
+
+            # Accumulate fold metrics for averaging after all folds are complete
+            epoch_metrics['loss'].append(train_log['loss'])
+            epoch_metrics['iou'].append(train_log['iou'])
+            epoch_metrics['dice'].append(train_log['dice'])
+            epoch_metrics['val_loss'].append(val_log['loss'])
+            epoch_metrics['val_iou'].append(val_log['iou'])
+            epoch_metrics['val_dice'].append(val_log['dice'])
+
+            # # Accumulate fold metrics for averaging after all folds are complete
+            # for key in epoch_metrics:
+            #     epoch_metrics[key].append(train_log[key] if 'val' not in key else val_log[key])
 
 
-        print('Training epoch [{}/{}], Training BCE loss:{:.4f}, Training DICE:{:.4f}, Training IOU:{:.4f}, Validation BCE loss:{:.4f}, Validation Dice:{:.4f}, Validation IOU:{:.4f}'.format(
-            epoch + 1, config['epochs'], train_log['loss'], train_log['dice'], train_log['iou'], val_log['loss'], val_log['dice'],val_log['iou']))
+        # Average the metrics across all folds after the epoch completes
+        avg_metrics = {metric: sum(values) / len(values) for metric, values in epoch_metrics.items()}
 
-        tmp = pd.Series([
-            epoch,
-            config['lr'],
-            train_log['loss'],
-            train_log['iou'],
-            train_log['dice'],
-            val_log['loss'],
-            val_log['iou'],
-            val_log['dice']
-        ], index=['epoch', 'lr', 'loss', 'iou', 'dice', 'val_loss', 'val_iou','val_dice'])
+        print(f'Epoch [{epoch + 1}/{config["epochs"]}] - Avg Loss: {avg_metrics["loss"]:.4f}, Avg Dice: {avg_metrics["dice"]:.4f}, Avg IOU: {avg_metrics["iou"]:.4f}')
+            
+        # print("*"*50)
+        # print("The lenght of image: {}, mask folders: {} for train".format(len(train_image_paths),len(train_mask_paths)))
+        # print("The lenght of image: {}, mask folders: {} for validation".format(len(val_image_paths),len(val_mask_paths)))
+        # print("Ratio between Val/ Train is {:2f}".format(len(val_image_paths)/len(train_image_paths)))
+        # print("*"*50)
+    
+    
+        # Logging the averaged results
+        log = pd.concat([log, pd.DataFrame([{
+            'epoch': epoch + 1,
+            'lr': config['lr'],
+            'loss': avg_metrics['loss'],
+            'iou': avg_metrics['iou'],
+            'dice': avg_metrics['dice'],
+            'val_loss': avg_metrics['val_loss'],
+            'val_iou': avg_metrics['val_iou'],
+            'val_dice': avg_metrics['val_dice']
+        }])], ignore_index=True)
+        log.to_csv(f'model_outputs/{file_name}/log.csv', index=False)
 
-        # log = log.append(tmp, ignore_index=True)
-        log = pd.concat([log, pd.DataFrame([tmp])], ignore_index=True)
-        log.to_csv('model_outputs/{}/log.csv'.format(file_name), index=False)
 
-        trigger += 1
+    # log= pd.DataFrame(index=[],columns= ['epoch','lr','loss','iou','dice','val_loss','val_iou'])
 
-        if val_log['dice'] > best_dice:
-            torch.save(model.state_dict(), 'model_outputs/{}/model.pth'.format(file_name))
-            best_dice = val_log['dice']
-            print("=> saved best model as validation DICE is greater than previous best DICE")
+        # Model saving logic
+        if avg_metrics['val_dice'] > best_dice:
+            torch.save(model.state_dict(), f'model_outputs/{file_name}/model.pth')
+            best_dice = avg_metrics['val_dice']
             trigger = 0
+            print("=> Best model saved (Dice improved)")
+        else:
+            trigger += 1
 
-        scheduler.step()
-        # early stopping
-        if config['early_stopping'] >= 0 and trigger >= config['early_stopping']:
-            print("=> early stopping")
+        # Early stopping check
+        if trigger >= config['early_stopping']:
+            print("=> Early stopping triggered")
             break
 
+        scheduler.step()
         torch.cuda.empty_cache()
+
+        # tmp = pd.Series([
+        #     epoch,
+        #     config['lr'],
+        #     train_log['loss'],
+        #     train_log['iou'],
+        #     train_log['dice'],
+        #     val_log['loss'],
+        #     val_log['iou'],
+        #     val_log['dice']
+        # ], index=['epoch', 'lr', 'loss', 'iou', 'dice', 'val_loss', 'val_iou','val_dice'])
+
+        # # log = log.append(tmp, ignore_index=True)
+        # log = pd.concat([log, pd.DataFrame([tmp])], ignore_index=True)
 
 if __name__ == '__main__':
     main()

@@ -10,4 +10,6 @@
 /Segmentation/Unet/__pycache__/
 /Segmentation/UnetNested/__pycache__/
 /LIDC-IDRI Dataset/
-
+/Segmentation/joboutput_*.out
+/Segmentation/joboutput_*.err
+/Segmentation/train*.sbatch
