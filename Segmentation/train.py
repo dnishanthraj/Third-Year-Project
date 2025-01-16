@@ -12,6 +12,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim import lr_scheduler
 from torch.optim.lr_scheduler import StepLR #Added this
+from datetime import datetime
+import uuid
 
 # cudnn.benchmark = True
 # cudnn.deterministic = False
@@ -41,13 +43,13 @@ def parse_args():
     # model
     parser.add_argument('--name', default="UNET",
                         help='model name: UNET',choices=['UNET', 'NestedUNET'])
-    parser.add_argument('--epochs', default=120, type=int, metavar='N',
+    parser.add_argument('--epochs', default=100, type=int, metavar='N',
                         help='number of total epochs to run')
-    parser.add_argument('-b', '--batch_size', default=4, type=int, #Changed default to 4 from 12
+    parser.add_argument('-b', '--batch_size', default=15, type=int, #Changed default to 4 from 12
                         metavar='N', help='mini-batch size (default: 6)')
     parser.add_argument('--early_stopping', default=20, type=int,
                         metavar='N', help='early stopping (default: 50)')
-    parser.add_argument('--num_workers', default=6, type=int)
+    parser.add_argument('--num_workers', default=12, type=int)
 
     # optimizer
     parser.add_argument('--optimizer', default='Adam',
@@ -55,7 +57,7 @@ def parse_args():
                         help='loss: ' +
                         ' | '.join(['Adam', 'SGD']) +
                         ' (default: Adam)')
-    parser.add_argument('--lr', '--learning_rate', default=1e-5, type=float,
+    parser.add_argument('--lr', '--learning_rate', default=1e-4, type=float, #Changed to e-3
                         metavar='LR', help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float,
                         help='momentum')
@@ -162,13 +164,20 @@ def main():
     print("CUDA Available:", torch.cuda.is_available())
     print("CUDA Version:", torch.version.cuda)
     print("cuDNN Version:", torch.backends.cudnn.version())
+    print("Allocated Memory:", torch.cuda.memory_allocated())
+    print("Reserved Memory:", torch.cuda.memory_reserved())
 
     # Make Model output directory
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    unique_id = uuid.uuid4().hex[:8]
+
+    # file_name = f"{config['name']}_{timestamp}_{unique_id}"
+
 
     if config['augmentation']== True:
-        file_name= config['name'] + '_with_augmentation'
+        file_name= f"{config['name']}_with_augmentation_{timestamp}_{unique_id}" 
     else:
-        file_name = config['name'] +'_base'
+        file_name = f"{config['name']}_base_{timestamp}_{unique_id}"
     os.makedirs('model_outputs/{}'.format(file_name),exist_ok=True)
     print("Creating directory called",file_name)
 
@@ -224,9 +233,7 @@ def main():
     meta['original_image']= meta['original_image'].apply(lambda x:IMAGE_DIR+ x +'.npy')
     meta['mask_image'] = meta['mask_image'].apply(lambda x:MASK_DIR+ x +'.npy')
 
-    train_meta = meta[meta['data_split']=='Train']
-    val_meta = meta[meta['data_split']=='Validation']
-    all_meta = pd.concat([train_meta, val_meta], ignore_index=True)
+    all_meta = meta[meta['data_split'].isin(['Train', 'Validation'])].reset_index(drop=True)
 
     # # Get all *npy images into list for Train
     # train_image_paths = list(train_meta['original_image'])
@@ -235,9 +242,6 @@ def main():
     # # Get all *npy images into list for Validation
     # val_image_paths = list(val_meta['original_image'])
     # val_mask_paths = list(val_meta['mask_image']
-
-
-    # Can I check train_meta length?
 
 
     # Prepare the dataset for k-fold (all data combined)
@@ -255,15 +259,16 @@ def main():
     best_dice = 0
     trigger = 0
 
-    for epoch in range(config['epochs']):
+    for idx, epoch in enumerate(range(config['epochs'])):
     # Initialize K-Fold
+        print(f"\nEpoch {idx}:")
         # Initialize metric accumulators for averaging across folds
         epoch_metrics = {'loss': [], 'iou': [], 'dice': [], 'val_loss': [], 'val_iou': [], 'val_dice': []}
         
         # K-Fold Loop: Each fold gets a separate train/validation split per epoch
         for fold, (train_idx, val_idx) in enumerate(kf.split(all_image_paths)):
 
-            print(f"\nStarting Fold {fold + 1} of {kf.get_n_splits()}")
+            print(f"Starting Fold {fold + 1} of {kf.get_n_splits()}")
         
             # Prepare train/validation sets for this fold
             train_image_paths = [all_image_paths[i] for i in train_idx]
@@ -281,14 +286,14 @@ def main():
                 shuffle=True,
                 pin_memory=True,
                 drop_last=True,
-                num_workers=6) # Changed num workers from 6.
+                num_workers=12) # Changed num workers from 6.
             val_loader = torch.utils.data.DataLoader(
                 val_dataset,
                 batch_size=config['batch_size'],
                 shuffle=False,
                 pin_memory=True,
                 drop_last=False,
-                num_workers=6)
+                num_workers=12)
 
             # Train and validate for this fold
             train_log = train(train_loader, model, criterion, optimizer)
@@ -330,14 +335,19 @@ def main():
             'val_iou': avg_metrics['val_iou'],
             'val_dice': avg_metrics['val_dice']
         }])], ignore_index=True)
-        log.to_csv(f'model_outputs/{file_name}/log.csv', index=False)
+
+        log_filename = f'model_outputs/{file_name}/log.csv'
+
+        # Save the log file with a unique name
+        log.to_csv(log_filename, index=False)
 
 
     # log= pd.DataFrame(index=[],columns= ['epoch','lr','loss','iou','dice','val_loss','val_iou'])
 
         # Model saving logic
         if avg_metrics['val_dice'] > best_dice:
-            torch.save(model.state_dict(), f'model_outputs/{file_name}/model.pth')
+            model_filename = f'model_outputs/{file_name}/model.pth'
+            torch.save(model.state_dict(), model_filename)
             best_dice = avg_metrics['val_dice']
             trigger = 0
             print("=> Best model saved (Dice improved)")

@@ -13,3 +13,6 @@
 /Segmentation/joboutput_*.out
 /Segmentation/joboutput_*.err
 /Segmentation/train*.sbatch
+/Segmentation/configuration.txt
+/Segmentation/model_outputs
+/Segmentation/figures

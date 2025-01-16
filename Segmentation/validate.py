@@ -31,6 +31,8 @@ def parse_args():
     # Get augmented version?
     parser.add_argument('--augmentation',default=False,type=str2bool,
                 help='Shoud we get the augmented version?')
+    parser.add_argument('--folder', required=True,
+                help='Path to the folder containing model and config files')
 
     args = parser.parse_args()
 
@@ -138,7 +140,12 @@ def main():
         NAME = args['name'] +'_base'
 
     # load configuration
-    with open('model_outputs/{}/config.yml'.format(NAME), 'r') as f:
+
+    folder = args['folder']  # Folder path passed as argument
+    config_path = os.path.join(folder, 'config.yml')
+    model_path = os.path.join(folder, 'model.pth')
+
+    with open(config_path, 'r') as f:
         # config = yaml.load(f)
         config = yaml.load(f, Loader=yaml.SafeLoader)
 
@@ -162,7 +169,8 @@ def main():
     print("Loading model file from {}".format(NAME))
     
     
-    state_dict = torch.load('model_outputs/{}/model.pth'.format(NAME), weights_only=True)
+    # state_dict = torch.load('model_outputs/{}/model.pth'.format(NAME), weights_only=True)
+    state_dict = torch.load(model_path, weights_only=True, map_location=torch.device('cuda'))
 
     # Strip `module.` prefix if present in keys
     from collections import OrderedDict
@@ -201,7 +209,8 @@ def main():
 
     # Directory to save U-Net predict output
     # OUTPUT_MASK_DIR = '/home/LUNG_DATA/Segmentation_output/{}'.format(NAME) #Changed this
-    OUTPUT_MASK_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Segmentation/Segmentation_output/{}'.format(NAME)
+    # OUTPUT_MASK_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Segmentation/Segmentation_output/{}'.format(NAME)
+    OUTPUT_MASK_DIR = os.path.join(folder, 'Segmentation_output', NAME)
     print("Saving OUTPUT files in directory {}".format(OUTPUT_MASK_DIR))
     os.makedirs(OUTPUT_MASK_DIR,exist_ok=True)
 
@@ -242,7 +251,8 @@ def main():
     CLEAN_NAME = 'CLEAN_'+NAME
 
     # CLEAN_OUTPUT_MASK_DIR = '/home/LUNG_DATA/Segmentation_output/{}'.format(CLEAN_NAME)
-    CLEAN_OUTPUT_MASK_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Segmentation/Segmentation_output/{}'.format(CLEAN_NAME)
+    # CLEAN_OUTPUT_MASK_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Segmentation/Segmentation_output/{}'.format(CLEAN_NAME)
+    CLEAN_OUTPUT_MASK_DIR = os.path.join(folder, 'Segmentation_output', CLEAN_NAME)
     print("Saving CLEAN files in directory {}".format(CLEAN_OUTPUT_MASK_DIR))
     os.makedirs(CLEAN_OUTPUT_MASK_DIR,exist_ok=True)
     clean_test_dataset = MyLidcDataset(clean_test_image_paths, clean_test_mask_paths)
