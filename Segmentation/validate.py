@@ -41,42 +41,29 @@ def parse_args():
 
     return args
 
-def save_output(output,output_directory,test_image_paths,counter):
-    # This saves the predicted image into a directory. The naming convention will follow PI
+def save_output(output, output_directory, test_image_paths, counter):
+ 
     for i in range(output.shape[0]):
+        # Derive the file name and replace 'NI' with 'PD' for predicted mask naming
         label = test_image_paths[counter][-23:]
-        label = label.replace('NI','PD')
-        np.save(output_directory+'/'+label,output[i,:,:])
-        #print("SAVED",output_directory+label+'.npy')
-        counter+=1
+        label = label.replace('NI', 'PD').replace('.npy', '.png')
 
-    return counter
+        # Load the original image
+        original_image_path = test_image_paths[counter]
+        original_image = np.load(original_image_path)
+        original_image = (original_image - original_image.min()) / (original_image.max() - original_image.min())  # Normalize
 
-def save_grad_cam(output, grad_cam_dir, test_image_paths, counter, grad_cam_generator):
-    for i in range(output.shape[0]):
-        label = test_image_paths[counter][-23:]
-        grad_cam_label = label.replace('NI', 'GC').replace('.npy', '.png')
-
-        # Enable gradient computation for Grad-CAM
-        with torch.set_grad_enabled(True):
-            # Generate Grad-CAM heatmap
-            heatmap = grad_cam_generator.generate(
-                torch.tensor(output[i, :, :]).unsqueeze(0).unsqueeze(0).cuda(), 
-                class_idx=0
-            )
-
-        # Normalize heatmap for visualization
-        heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
-
-        # Save the Grad-CAM visualization
+        # Overlay the predicted mask on the original image
         plt.figure(figsize=(10, 10))
-        plt.imshow(output[i, :, :], cmap="gray")
-        plt.imshow(heatmap, cmap="jet", alpha=0.5)
+        plt.imshow(original_image, cmap="gray")  # Original image in grayscale
+        plt.imshow(output[i, :, :], cmap="jet", alpha=0.5)  # Use 'jet' colour map for the mask
         plt.colorbar()
-        plt.title("Grad-CAM Heatmap")
-        
-        os.makedirs(grad_cam_dir, exist_ok=True)  # Ensure the directory exists
-        plt.savefig(os.path.join(grad_cam_dir, grad_cam_label))
+        plt.title("Predicted Mask Overlay")
+
+        # Save the overlay with the same naming convention
+        overlay_save_path = os.path.join(output_directory, label)
+        os.makedirs(output_directory, exist_ok=True)
+        plt.savefig(overlay_save_path)
         plt.close()
 
         counter += 1
@@ -84,6 +71,45 @@ def save_grad_cam(output, grad_cam_dir, test_image_paths, counter, grad_cam_gene
     return counter
 
 
+def save_grad_cam(output, grad_cam_dir, test_image_paths, counter, grad_cam_generator):
+
+    for i in range(output.shape[0]):
+        # Derive the file name and replace 'NI' with 'GC' for Grad-CAM naming
+        grad_cam_label = test_image_paths[counter][-23:]
+        grad_cam_label = grad_cam_label.replace('NI', 'GC').replace('.npy', '.png')
+
+        # Load the original image
+        original_image_path = test_image_paths[counter]
+        original_image = np.load(original_image_path)
+        original_image = (original_image - original_image.min()) / (original_image.max() - original_image.min())  # Normalize
+
+        # Enable gradient computation for Grad-CAM
+        with torch.set_grad_enabled(True):
+            # Generate Grad-CAM heatmap
+            heatmap = grad_cam_generator.generate(
+                torch.tensor(output[i, :, :]).unsqueeze(0).unsqueeze(0).cuda(),
+                class_idx=0
+            )
+
+        # Normalize heatmap
+        heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
+
+        # Overlay Grad-CAM heatmap on the original image
+        plt.figure(figsize=(10, 10))
+        plt.imshow(original_image, cmap="gray")  # Original image in grayscale
+        plt.imshow(heatmap, cmap="jet", alpha=0.5)  # Use 'jet' colour map for Grad-CAM
+        plt.colorbar()
+        plt.title("Grad-CAM Heatmap Overlay")
+
+        # Save the overlay with the same naming convention
+        grad_cam_save_path = os.path.join(grad_cam_dir, grad_cam_label)
+        os.makedirs(grad_cam_dir, exist_ok=True)
+        plt.savefig(grad_cam_save_path)
+        plt.close()
+
+        counter += 1
+
+    return counter
 
 def calculate_fp(prediction_dir,mask_dir,distance_threshold=80):
     """This calculates the fp by comparing the predicted mask and orginal mask"""
