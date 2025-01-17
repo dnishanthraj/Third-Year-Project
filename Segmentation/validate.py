@@ -142,8 +142,10 @@ def main():
     # load configuration
 
     folder = args['folder']  # Folder path passed as argument
-    config_path = os.path.join(folder, 'config.yml')
-    model_path = os.path.join(folder, 'model.pth')
+    # config_path = os.path.join(folder, 'config.yml')
+    # model_path = os.path.join(folder, 'model.pth')
+    config_path = os.path.join('/model_outputs', folder, 'config.yml')
+    model_path = os.path.join('/model_outputs', folder, 'model.pth')
 
     with open(config_path, 'r') as f:
         # config = yaml.load(f)
@@ -210,7 +212,7 @@ def main():
     # Directory to save U-Net predict output
     # OUTPUT_MASK_DIR = '/home/LUNG_DATA/Segmentation_output/{}'.format(NAME) #Changed this
     # OUTPUT_MASK_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Segmentation/Segmentation_output/{}'.format(NAME)
-    OUTPUT_MASK_DIR = os.path.join(folder, 'Segmentation_output', NAME)
+    OUTPUT_MASK_DIR = os.path.join('/model_outputs', folder, 'Segmentation_output', NAME)
     print("Saving OUTPUT files in directory {}".format(OUTPUT_MASK_DIR))
     os.makedirs(OUTPUT_MASK_DIR,exist_ok=True)
 
@@ -252,7 +254,7 @@ def main():
 
     # CLEAN_OUTPUT_MASK_DIR = '/home/LUNG_DATA/Segmentation_output/{}'.format(CLEAN_NAME)
     # CLEAN_OUTPUT_MASK_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Segmentation/Segmentation_output/{}'.format(CLEAN_NAME)
-    CLEAN_OUTPUT_MASK_DIR = os.path.join(folder, 'Segmentation_output', CLEAN_NAME)
+    CLEAN_OUTPUT_MASK_DIR = os.path.join('/model_outputs', folder, 'Segmentation_output', CLEAN_NAME)
     print("Saving CLEAN files in directory {}".format(CLEAN_OUTPUT_MASK_DIR))
     os.makedirs(CLEAN_OUTPUT_MASK_DIR,exist_ok=True)
     clean_test_dataset = MyLidcDataset(clean_test_image_paths, clean_test_mask_paths)
