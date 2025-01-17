@@ -18,4 +18,4 @@ source /etc/profile.d/conda.sh
 module load CUDA
 ## python3.11 train.py --name UNET --augmentation True ##
 # python3.11 validate.py --name UNET --augmentation True
-python3.11 validate.py --name NestedUNET --augmentation True
+python validate.py --name NestedUNET --augmentation True --folder NestedUNET_with_augmentation

@@ -5,6 +5,7 @@ from glob import glob
 from collections import OrderedDict
 import numpy as np
 
+import matplotlib.pyplot as plt
 import cv2
 import torch
 import torch.backends.cudnn as cudnn
@@ -15,6 +16,8 @@ from scipy import ndimage as ndi
 from scipy.ndimage import label, generate_binary_structure
 from sklearn.metrics.pairwise import euclidean_distances
 from tqdm import tqdm
+from grad_cam import GradCAM
+
 
 from dataset import MyLidcDataset
 from metrics import iou_score,dice_coef,dice_coef2
@@ -47,8 +50,40 @@ def save_output(output,output_directory,test_image_paths,counter):
         #print("SAVED",output_directory+label+'.npy')
         counter+=1
 
+    return counter
+
+def save_grad_cam(output, grad_cam_dir, test_image_paths, counter, grad_cam_generator):
+    for i in range(output.shape[0]):
+        label = test_image_paths[counter][-23:]
+        grad_cam_label = label.replace('NI', 'GC').replace('.npy', '.png')
+
+        # Enable gradient computation for Grad-CAM
+        with torch.set_grad_enabled(True):
+            # Generate Grad-CAM heatmap
+            heatmap = grad_cam_generator.generate(
+                torch.tensor(output[i, :, :]).unsqueeze(0).unsqueeze(0).cuda(), 
+                class_idx=0
+            )
+
+        # Normalize heatmap for visualization
+        heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
+
+        # Save the Grad-CAM visualization
+        plt.figure(figsize=(10, 10))
+        plt.imshow(output[i, :, :], cmap="gray")
+        plt.imshow(heatmap, cmap="jet", alpha=0.5)
+        plt.colorbar()
+        plt.title("Grad-CAM Heatmap")
+        
+        os.makedirs(grad_cam_dir, exist_ok=True)  # Ensure the directory exists
+        plt.savefig(os.path.join(grad_cam_dir, grad_cam_label))
+        plt.close()
+
+        counter += 1
 
     return counter
+
+
 
 def calculate_fp(prediction_dir,mask_dir,distance_threshold=80):
     """This calculates the fp by comparing the predicted mask and orginal mask"""
@@ -144,8 +179,12 @@ def main():
     folder = args['folder']  # Folder path passed as argument
     # config_path = os.path.join(folder, 'config.yml')
     # model_path = os.path.join(folder, 'model.pth')
-    config_path = os.path.join('/model_outputs', folder, 'config.yml')
-    model_path = os.path.join('/model_outputs', folder, 'model.pth')
+    # config_path = os.path.join('/model_outputs', folder, 'config.yml')
+    # model_path = os.path.join('/model_outputs', folder, 'model.pth')
+
+    config_path = os.path.join(os.getcwd(), 'model_outputs', folder, 'config.yml')
+    model_path = os.path.join(os.getcwd(), 'model_outputs', folder, 'model.pth')
+
 
     with open(config_path, 'r') as f:
         # config = yaml.load(f)
@@ -156,6 +195,7 @@ def main():
     for key in config.keys():
         print('%s: %s' % (key, str(config[key])))
     print('-'*20)
+
 
     cudnn.benchmark = True
 
@@ -170,16 +210,22 @@ def main():
         model = nn.DataParallel(model)
     print("Loading model file from {}".format(NAME))
     
+
     
     # state_dict = torch.load('model_outputs/{}/model.pth'.format(NAME), weights_only=True)
     state_dict = torch.load(model_path, weights_only=True, map_location=torch.device('cuda'))
 
     # Strip `module.` prefix if present in keys
-    from collections import OrderedDict
+    #Fixed to use multiple GPU's
+
     new_state_dict = OrderedDict()
     for k, v in state_dict.items():
-        if k.startswith('module.'):
-            new_state_dict[k[7:]] = v  # Remove 'module.' prefix
+        if k.startswith('module.') and not any(name.startswith('module.') for name in model.state_dict().keys()):
+            # Strip 'module.' if not expected by the model
+            new_state_dict[k[7:]] = v
+        elif not k.startswith('module.') and any(name.startswith('module.') for name in model.state_dict().keys()):
+            # Add 'module.' if expected by the model
+            new_state_dict[f'module.{k}'] = v
         else:
             new_state_dict[k] = v
 
@@ -187,6 +233,10 @@ def main():
 
     # model.load_state_dict(torch.load('model_outputs/{}/model.pth'.format(NAME)))
     model = model.cuda()
+
+    # Use the deepest encoder layer for Grad-CAM
+    grad_cam = GradCAM(model, model.conv2_0)  # Adjust `model.conv2_0` to the appropriate layer
+
 
     # Data loading code
     IMAGE_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Preprocessing/data/Image/'
@@ -212,9 +262,13 @@ def main():
     # Directory to save U-Net predict output
     # OUTPUT_MASK_DIR = '/home/LUNG_DATA/Segmentation_output/{}'.format(NAME) #Changed this
     # OUTPUT_MASK_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Segmentation/Segmentation_output/{}'.format(NAME)
-    OUTPUT_MASK_DIR = os.path.join('/model_outputs', folder, 'Segmentation_output', NAME)
+    OUTPUT_MASK_DIR = os.path.join(os.getcwd(), 'model_outputs', folder, 'Segmentation_output', NAME)
+    GRAD_CAM_DIR = os.path.join(os.getcwd(), 'model_outputs', folder, 'Grad_CAM_output', NAME)
     print("Saving OUTPUT files in directory {}".format(OUTPUT_MASK_DIR))
+    print(f"Saving Grad-CAM heatmaps in {GRAD_CAM_DIR}")
     os.makedirs(OUTPUT_MASK_DIR,exist_ok=True)
+    os.makedirs(GRAD_CAM_DIR, exist_ok=True)
+
 
 
     test_dataset = MyLidcDataset(test_image_paths, test_mask_paths)
@@ -254,8 +308,11 @@ def main():
 
     # CLEAN_OUTPUT_MASK_DIR = '/home/LUNG_DATA/Segmentation_output/{}'.format(CLEAN_NAME)
     # CLEAN_OUTPUT_MASK_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Segmentation/Segmentation_output/{}'.format(CLEAN_NAME)
-    CLEAN_OUTPUT_MASK_DIR = os.path.join('/model_outputs', folder, 'Segmentation_output', CLEAN_NAME)
+    CLEAN_OUTPUT_MASK_DIR = os.path.join(os.getcwd(), 'model_outputs', folder, 'Segmentation_output', CLEAN_NAME)
+    CLEAN_GRAD_CAM_DIR = os.path.join(os.getcwd(), 'model_outputs', folder, 'Grad_CAM_output', CLEAN_NAME)
     print("Saving CLEAN files in directory {}".format(CLEAN_OUTPUT_MASK_DIR))
+    print(f"Saving CLEAN Grad-CAM heatmaps in {CLEAN_GRAD_CAM_DIR}")
+    os.makedirs(CLEAN_GRAD_CAM_DIR, exist_ok=True)
     os.makedirs(CLEAN_OUTPUT_MASK_DIR,exist_ok=True)
     clean_test_dataset = MyLidcDataset(clean_test_image_paths, clean_test_mask_paths)
     clean_test_loader = torch.utils.data.DataLoader(
@@ -296,6 +353,7 @@ def main():
             #print(output.shape)
 
             counter = save_output(output,OUTPUT_MASK_DIR,test_image_paths,counter)
+            counter = save_grad_cam(output, GRAD_CAM_DIR, test_image_paths, counter, grad_cam)
             pbar.set_postfix(postfix)
             pbar.update(1)
         pbar.close()
