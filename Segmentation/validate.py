@@ -41,6 +41,7 @@ def parse_args():
 
     return args
 
+# NOTE: A green overlay for the predicted mask means that we have no predicted mask (for some unknown reason)
 def save_output(output, output_directory, test_image_paths, counter):
     label = test_image_paths[counter][-23:]
     label = label.replace('NI', 'PD').replace('.npy', '.png')
@@ -194,7 +195,6 @@ def main():
 
     config_path = os.path.join(os.getcwd(), 'model_outputs', folder, 'config.yml')
     model_path = os.path.join(os.getcwd(), 'model_outputs', folder, 'model.pth')
-
 
     with open(config_path, 'r') as f:
         # config = yaml.load(f)
@@ -358,7 +358,7 @@ def main():
             ])
 
             output = torch.sigmoid(output)
-            output = (output > 0.5).float().cpu().numpy()
+            output = (output > 0.5).float().cpu().numpy() # Thresholding - changed to 0.3 to see if better accuracy
             output = np.squeeze(output, axis=1)
 
             # Process one image at a time, ensuring `counter` is consistent
