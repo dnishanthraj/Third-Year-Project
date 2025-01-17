@@ -1,4 +1,4 @@
-### NEED TO FIX: See why not syncing epochs with folds, and why fold lengths vary each fold. Fix!
+
 import pandas as pd
 import argparse
 import os
@@ -45,11 +45,11 @@ def parse_args():
                         help='model name: UNET',choices=['UNET', 'NestedUNET'])
     parser.add_argument('--epochs', default=100, type=int, metavar='N',
                         help='number of total epochs to run')
-    parser.add_argument('-b', '--batch_size', default=15, type=int, #Changed default to 4 from 12
+    parser.add_argument('-b', '--batch_size', default=8, type=int, #Changed default to 4 from 12
                         metavar='N', help='mini-batch size (default: 6)')
     parser.add_argument('--early_stopping', default=20, type=int,
                         metavar='N', help='early stopping (default: 50)')
-    parser.add_argument('--num_workers', default=12, type=int)
+    parser.add_argument('--num_workers', default=6, type=int)
 
     # optimizer
     parser.add_argument('--optimizer', default='Adam',
@@ -59,7 +59,7 @@ def parse_args():
                         ' (default: Adam)')
     parser.add_argument('--lr', '--learning_rate', default=1e-4, type=float, #Changed to e-3
                         metavar='LR', help='initial learning rate')
-    parser.add_argument('--momentum', default=0.9, type=float,
+    parser.add_argument('--momentum', default=0.9, type=float, #Not needed, sticking with Adam, screw SGD
                         help='momentum')
     parser.add_argument('--weight_decay', default=1e-4, type=float,
                         help='weight decay')
@@ -286,14 +286,14 @@ def main():
                 shuffle=True,
                 pin_memory=True,
                 drop_last=True,
-                num_workers=12) # Changed num workers from 6.
+                num_workers=6) # Changed num workers from 6.
             val_loader = torch.utils.data.DataLoader(
                 val_dataset,
                 batch_size=config['batch_size'],
                 shuffle=False,
                 pin_memory=True,
                 drop_last=False,
-                num_workers=12)
+                num_workers=6)
 
             # Train and validate for this fold
             train_log = train(train_loader, model, criterion, optimizer)

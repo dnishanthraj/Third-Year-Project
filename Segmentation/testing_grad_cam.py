@@ -26,7 +26,7 @@ def apply_grad_cam(file_path, model_path, save_path):
     model.eval().cuda()
 
     # Use the deepest encoder layer `conv4_0` for Grad-CAM
-    target_layer = model.conv3_0
+    target_layer = model.conv2_0
 
     # Initialize Grad-CAM
     grad_cam = GradCAM(model, target_layer)
@@ -89,12 +89,12 @@ if __name__ == "__main__":
 
     # Define the paths
     model_name = "NestedUNET_with_augmentation"
-    file_name = "0023_NI000_slice002.npy"  # Original CT slice
+    file_name = "0021_NI002_slice003.npy"  # Original CT slice
     model_file_name = "model.pth"  # Trained model weights
     output_file_name = "grad_cam_heatmap.png"  # Heatmap output file name
 
     # Construct full paths
-    file_path = os.path.join("../Preprocessing/data/Image/LIDC-IDRI-0023", file_name)  # Adjusted for sibling folder
+    file_path = os.path.join("../Preprocessing/data/Image/LIDC-IDRI-0021", file_name)  # Adjusted for sibling folder
     model_path = os.path.join("model_outputs", model_name, model_file_name)
     save_path = os.path.join("grad_cam_outputs", output_file_name)  # Save directory for heatmaps
 
