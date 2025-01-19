@@ -414,7 +414,6 @@ def main():
             output = np.squeeze(output,axis=1)
             #print(output.shape)
 
-
             for i in range(output.shape[0]):
                 # Save predicted mask
                 save_output(output[i:i+1], CLEAN_OUTPUT_MASK_DIR, clean_test_image_paths, counter)
