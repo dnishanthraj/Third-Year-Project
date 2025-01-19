@@ -414,7 +414,14 @@ def main():
             output = np.squeeze(output,axis=1)
             #print(output.shape)
 
-            counter = save_output(output,CLEAN_OUTPUT_MASK_DIR,clean_test_image_paths,counter)
+
+            for i in range(output.shape[0]):
+                # Save predicted mask
+                save_output(output[i:i+1], CLEAN_OUTPUT_MASK_DIR, clean_test_image_paths, counter)
+                # Save Grad-CAM heatmap
+                save_grad_cam(output[i:i+1], CLEAN_GRAD_CAM_DIR, clean_test_image_paths, counter, grad_cam)
+                counter += 1  # Increment only after both operations are complete
+
             pbar.set_postfix(postfix)
             pbar.update(1)
         pbar.close()
