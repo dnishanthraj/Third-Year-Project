@@ -1,8 +1,9 @@
 import streamlit as st
 import os
 import numpy as np
+from PIL import Image
+from streamlit_image_zoom import image_zoom
 import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap
 
 # Paths for demonstration purposes
 OUTPUT_MASK_DIR = "../Segmentation/model_outputs/NestedUNET_with_augmentation/Segmentation_output/NestedUNET_with_augmentation"
@@ -19,28 +20,44 @@ def load_npy(filepath):
         st.error(f"Error loading .npy file: {e}")
         return None
 
-def display_overlay_streamlit(base_image, overlay=None, overlay_type=None):
-    """Display overlay on the base image using distinct color schemes."""
-    plt.figure(figsize=(6, 6))
-    plt.imshow(base_image, cmap="gray", interpolation="none")  # Grayscale for the base image
+def combine_images(base_image, overlay=None, overlay_type=None):
+    """Combine base image with overlay using color schemes."""
+    base_image = (base_image - base_image.min()) / (base_image.max() - base_image.min())  # Normalize base image
+    combined_image = np.stack([base_image] * 3, axis=-1)  # Convert grayscale to RGB
 
-    # Apply overlay with specific color schemes
     if overlay is not None:
-        if overlay_type == "GC":  # Grad-CAM Heatmap
-            plt.imshow(overlay, cmap="jet", alpha=0.5, interpolation="none")
-        elif overlay_type == "MA":  # Ground Truth Mask (Green)
-            green_overlay = np.zeros((*overlay.shape, 4))  # RGBA
-            green_overlay[:, :, 1] = overlay  # Green channel
-            green_overlay[:, :, 3] = overlay  # Alpha channel
-            plt.imshow(green_overlay, alpha=0.5, interpolation="none")
-        elif overlay_type == "PD":  # Predicted Mask (Red)
-            red_overlay = np.zeros((*overlay.shape, 4))  # RGBA
-            red_overlay[:, :, 0] = overlay  # Red channel
-            red_overlay[:, :, 3] = overlay  # Alpha channel
-            plt.imshow(red_overlay, alpha=0.5, interpolation="none")
+        overlay = overlay.astype(float) if overlay.dtype == bool else overlay
+        if overlay.max() > overlay.min():
+            overlay = (overlay - overlay.min()) / (overlay.max() - overlay.min())
 
-    plt.axis("off")
-    st.pyplot(plt)
+        # Apply overlay type color schemes
+        if overlay_type == "GC":  # Grad-CAM Heatmap
+            overlay_colored = plt.cm.jet(overlay)[:, :, :3]
+        elif overlay_type == "MA":  # Ground Truth Mask (Green)
+            overlay_colored = np.stack([np.zeros_like(overlay), overlay, np.zeros_like(overlay)], axis=-1)
+        elif overlay_type == "PD":  # Predicted Mask (Red)
+            overlay_colored = np.stack([overlay, np.zeros_like(overlay), np.zeros_like(overlay)], axis=-1)
+        else:
+            overlay_colored = np.zeros_like(combined_image)
+
+        # Combine base image and overlay
+        combined_image += 0.5 * overlay_colored
+        combined_image = np.clip(combined_image, 0, 1)
+
+    return (combined_image * 255).astype(np.uint8)
+
+def display_zoomable_image(base_image, overlay=None, overlay_type=None, zoom_factor=2.0):
+    """Display an image with zoom functionality using streamlit-image-zoom."""
+    # Combine images
+    combined_image = combine_images(base_image, overlay, overlay_type)
+
+    # Convert to PIL Image
+    pil_image = Image.fromarray(combined_image)
+
+    # Use streamlit-image-zoom for zooming
+    st.write("<div style='text-align: center;'>", unsafe_allow_html=True)  # Center the image
+    image_zoom(pil_image, mode="dragmove", size=750, zoom_factor=zoom_factor)  # Adjustable zoom
+    st.write("</div>", unsafe_allow_html=True)
 
 def find_file_in_subfolder(base_dir, patient_id, file_name):
     """Search for the correct .npy file within the patient-specific subfolder."""
@@ -48,7 +65,7 @@ def find_file_in_subfolder(base_dir, patient_id, file_name):
     file_path = os.path.join(subfolder, file_name)
     return file_path if os.path.exists(file_path) else None
 
-def display_overlay(patient_id, region_id, slice_name, overlay_type):
+def display_overlay(patient_id, region_id, slice_name, overlay_type, zoom_factor):
     """Display an overlay (Grad-CAM, Ground Truth Mask, or Predicted Mask) on the Original Image."""
     original_file_name = f"{patient_id}_NI{region_id}_slice{slice_name}.npy"
     overlay_file_name = f"{patient_id}_{overlay_type}{region_id}_slice{slice_name}.npy"
@@ -59,11 +76,11 @@ def display_overlay(patient_id, region_id, slice_name, overlay_type):
         else os.path.join(GRAD_CAM_DIR if overlay_type == "GC" else OUTPUT_MASK_DIR, overlay_file_name)
     )
 
-    original_image = load_npy(original_path) if original_path else None
+    original_image = load_npy(original_path)
     overlay_image = load_npy(overlay_path) if overlay_path and os.path.exists(overlay_path) else None
 
     if original_image is not None:
-        display_overlay_streamlit(original_image, overlay_image, overlay_type)
+        display_zoomable_image(original_image, overlay_image, overlay_type, zoom_factor)
     else:
         st.warning("Original image not found.")
 
@@ -99,12 +116,13 @@ grad_cam_files = [f for f in os.listdir(GRAD_CAM_DIR) if f.endswith('.npy')]
 output_masks_by_patient = sort_patients(parse_filenames(output_mask_files, prefix="PD"))
 grad_cams_by_patient = sort_patients(parse_filenames(grad_cam_files, prefix="GC"))
 
-# Sidebar for selecting patient, region, slice, and overlay type
+# Sidebar for selecting patient, region, slice, overlay type, and zoom factor
 st.sidebar.title("Available Files")
 selected_patient = st.sidebar.selectbox("Select Patient", list(output_masks_by_patient.keys()))
 selected_region = st.sidebar.selectbox("Select Region", list(output_masks_by_patient[selected_patient].keys()))
 selected_slice = st.sidebar.selectbox("Select Slice", output_masks_by_patient[selected_patient][selected_region], format_func=lambda x: x[1])
 overlay_type = st.sidebar.radio("Select Overlay", ["None", "Grad-CAM Heatmap", "Ground Truth Mask", "Predicted Mask"])
+zoom_factor = st.sidebar.slider("Zoom Factor", min_value=1.0, max_value=5.0, step=0.1, value=2.0)
 
 # Display the selected overlay
 if selected_patient and selected_region and selected_slice:
@@ -112,10 +130,10 @@ if selected_patient and selected_region and selected_slice:
     st.header(f"Patient {int(selected_patient)} | Region {int(selected_region)} | Slice {slice_index}")
     if overlay_type != "None":
         overlay_code = "GC" if overlay_type == "Grad-CAM Heatmap" else "MA" if overlay_type == "Ground Truth Mask" else "PD"
-        display_overlay(selected_patient, selected_region, slice_index, overlay_code)
+        display_overlay(selected_patient, selected_region, slice_index, overlay_code, zoom_factor)
     else:
         file_name = f"{selected_patient}_NI{selected_region}_slice{slice_index}.npy"
         original_path = find_file_in_subfolder(IMAGE_DIR, int(selected_patient), file_name)
         original_image = load_npy(original_path) if original_path else None
         if original_image is not None:
-            display_overlay_streamlit(original_image)
+            display_zoomable_image(original_image, zoom_factor=zoom_factor)
