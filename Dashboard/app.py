@@ -18,6 +18,74 @@ def load_npy(filepath):
         st.error(f"Error loading .npy file: {e}")
         return None
 
+def overlay_images(base_image, overlay, alpha=0.5, cmap_overlay=None):
+    """Overlay the non-zero values of the overlay image on the base image."""
+    base_image = (base_image - base_image.min()) / (base_image.max() - base_image.min())  # Normalize base image
+
+    # Ensure overlay is converted to integers if it's boolean
+    if overlay.dtype == bool:
+        overlay = overlay.astype(int)
+
+    # Normalize the overlay
+    overlay_normalized = (overlay - overlay.min()) / (overlay.max() - overlay.min()) if overlay.max() > 0 else overlay
+
+    # Create a colored overlay
+    if cmap_overlay:
+        overlay_colored = plt.cm.get_cmap(cmap_overlay)(overlay_normalized)[:, :, :3]
+    else:
+        overlay_colored = np.stack([overlay_normalized] * 3, axis=-1)
+
+    # Apply overlay where non-zero
+    combined_image = base_image.copy()
+    for i in range(3):  # RGB channels
+        combined_image += alpha * overlay_colored[:, :, i] * (overlay > 0)
+
+    # Clip to ensure valid image range
+    combined_image = np.clip(combined_image, 0, 1)
+    return combined_image
+
+
+def find_file_in_subfolder(base_dir, patient_id, file_name):
+    """Search for the correct .npy file within the patient-specific subfolder."""
+    subfolder = os.path.join(base_dir, f"LIDC-IDRI-{patient_id:04d}")
+    file_path = os.path.join(subfolder, file_name)
+    if os.path.exists(file_path):
+        return file_path
+    else:
+        return None
+
+def display_overlay(patient_id, region_id, slice_name, overlay_type):
+    """Display an overlay (Grad-CAM, Ground Truth Mask, or Predicted Mask) on the Original Image."""
+    # File paths
+    original_file_name = f"{patient_id}_NI{region_id}_slice{slice_name}.npy"
+    overlay_file_name = f"{patient_id}_{overlay_type}{region_id}_slice{slice_name}.npy"
+
+    original_path = find_file_in_subfolder(IMAGE_DIR, int(patient_id), original_file_name)
+    overlay_path = (
+        find_file_in_subfolder(MASK_DIR, int(patient_id), overlay_file_name)  # For Ground Truth
+        if overlay_type == "MA"
+        else os.path.join(
+            GRAD_CAM_DIR if overlay_type == "GC" else OUTPUT_MASK_DIR, overlay_file_name
+        )
+    )
+
+    # Load images
+    original_image = load_npy(original_path) if original_path else None
+    overlay_image = load_npy(overlay_path) if overlay_path and os.path.exists(overlay_path) else None
+
+    # Display overlay
+    if original_image is not None:
+        if overlay_image is not None:
+            combined_image = overlay_images(
+                original_image, overlay_image, alpha=0.5, cmap_overlay=("jet" if overlay_type == "GC" else "cividis")
+            )
+
+            display_image(combined_image, caption=f"Original + {overlay_type} Overlay")
+        else:
+            display_image(original_image, caption="Original Image (No Overlay)")
+    else:
+        st.warning("Original image not found.")
+
 def display_image(data, caption, cmap=None):
     """Display the data with optional colormap for Grad-CAM or masks."""
     if isinstance(data, np.ndarray):
@@ -31,46 +99,6 @@ def display_image(data, caption, cmap=None):
             st.warning(f"Data has unsupported shape {data.shape} for visualization.")
     else:
         st.warning("Data is not a NumPy array.")
-
-def find_file_in_subfolder(base_dir, patient_id, file_name):
-    """Search for the correct .npy file within the patient-specific subfolder."""
-    subfolder = os.path.join(base_dir, f"LIDC-IDRI-{patient_id:04d}")
-    file_path = os.path.join(subfolder, file_name)
-    if os.path.exists(file_path):
-        return file_path
-    else:
-        return None
-
-def display_selected_category(patient_id, region_id, slice_name, display_type):
-    """Display the selected category (Original Image, Ground Truth Mask, Predicted Mask, Grad-CAM)."""
-    if display_type == "Original Image":
-        base_file_name = f"{patient_id}_NI{region_id}_slice{slice_name}.npy"
-        file_path = find_file_in_subfolder(IMAGE_DIR, int(patient_id), base_file_name)
-        st.subheader("Original Image")
-        data = load_npy(file_path) if file_path else None
-        if data is not None:
-            display_image(data, caption="Original Image", cmap="gray")
-    elif display_type == "Ground Truth Mask":
-        base_file_name = f"{patient_id}_MA{region_id}_slice{slice_name}.npy"
-        file_path = find_file_in_subfolder(MASK_DIR, int(patient_id), base_file_name)
-        st.subheader("Ground Truth Mask")
-        data = load_npy(file_path) if file_path else None
-        if data is not None:
-            display_image(data, caption="Ground Truth Mask", cmap="cividis")
-    elif display_type == "Predicted Mask":
-        file_name = f"{patient_id}_PD{region_id}_slice{slice_name}.npy"
-        file_path = os.path.join(OUTPUT_MASK_DIR, file_name)
-        st.subheader("Predicted Mask")
-        data = load_npy(file_path) if os.path.exists(file_path) else None
-        if data is not None:
-            display_image(data, caption="Predicted Mask", cmap="cividis")
-    elif display_type == "Grad-CAM Heatmap":
-        file_name = f"{patient_id}_GC{region_id}_slice{slice_name}.npy"
-        file_path = os.path.join(GRAD_CAM_DIR, file_name)
-        st.subheader("Grad-CAM Heatmap")
-        data = load_npy(file_path) if os.path.exists(file_path) else None
-        if data is not None:
-            display_image(data, caption="Grad-CAM Heatmap", cmap="jet")
 
 def parse_filenames(files, prefix):
     """
@@ -114,7 +142,7 @@ grad_cam_files = [f for f in os.listdir(GRAD_CAM_DIR) if f.endswith('.npy')]
 output_masks_by_patient = sort_patients(parse_filenames(output_mask_files, prefix="PD"))
 grad_cams_by_patient = sort_patients(parse_filenames(grad_cam_files, prefix="GC"))
 
-# Sidebar for selecting patient, region, slice, and category
+# Sidebar for selecting patient, region, slice, and overlay type
 st.sidebar.title("Available Files")
 selected_patient = st.sidebar.selectbox(
     "Select Patient", 
@@ -134,13 +162,21 @@ selected_slice = st.sidebar.selectbox(
     format_func=lambda x: x[1]
 )
 
-display_type = st.sidebar.radio(
-    "Select Display Category", 
-    ["Original Image", "Ground Truth Mask", "Predicted Mask", "Grad-CAM Heatmap"]
+overlay_type = st.sidebar.radio(
+    "Select Overlay", 
+    ["None", "Grad-CAM Heatmap", "Ground Truth Mask", "Predicted Mask"]
 )
 
-# Display the selected category
+# Display the selected overlay
 if selected_patient and selected_region and selected_slice:
     slice_index = selected_slice[1].split()[-1]
     st.header(f"Patient {int(selected_patient)} | Region {int(selected_region)} | Slice {slice_index}")
-    display_selected_category(selected_patient, selected_region, slice_index, display_type)
+    if overlay_type != "None":
+        overlay_code = "GC" if overlay_type == "Grad-CAM Heatmap" else "MA" if overlay_type == "Ground Truth Mask" else "PD"
+        display_overlay(selected_patient, selected_region, slice_index, overlay_code)
+    else:
+        file_name = f"{selected_patient}_NI{selected_region}_slice{slice_index}.npy"
+        original_path = find_file_in_subfolder(IMAGE_DIR, int(selected_patient), file_name)
+        original_image = load_npy(original_path) if original_path else None
+        if original_image is not None:
+            display_image(original_image, caption="Original Image")
