@@ -148,14 +148,31 @@ grad_cams_by_patient = sort_patients(parse_filenames(grad_cam_files, prefix="GC"
 
 # Sidebar for selecting patient, region, slice, overlay type, and zoom factor
 st.sidebar.title("Available Files")
-selected_patient = st.sidebar.selectbox("Select Patient", list(output_masks_by_patient.keys()))
-selected_region = st.sidebar.selectbox("Select Region", list(output_masks_by_patient[selected_patient].keys()))
-selected_slice = st.sidebar.selectbox("Select Slice", output_masks_by_patient[selected_patient][selected_region], format_func=lambda x: x[1])
-overlay_type = st.sidebar.radio("Select Overlay", ["None", "Grad-CAM Heatmap", "Ground Truth Mask", "Predicted Mask"])
-zoom_factor = st.sidebar.slider("Zoom Factor", min_value=1.0, max_value=5.0, step=0.1, value=2.0)
 
-# Display the selected overlay
-if selected_patient and selected_region and selected_slice:
+# Searchable dropdown for patients
+selected_patient = st.sidebar.multiselect(
+    "Search Patient", 
+    sorted(output_masks_by_patient.keys(), key=lambda x: int(x)),
+    default=[sorted(output_masks_by_patient.keys(), key=lambda x: int(x))[0]],
+    max_selections=1,  # Only one patient can be selected
+)
+
+# Check if a patient is selected
+if selected_patient:
+    selected_patient = selected_patient[0]
+    
+    # Display region and slice dropdowns
+    sorted_regions = sorted(output_masks_by_patient[selected_patient].keys(), key=lambda x: int(x))
+    selected_region = st.sidebar.selectbox("Select Region", sorted_regions)
+    
+    sorted_slices = sorted(output_masks_by_patient[selected_patient][selected_region], key=lambda x: int(x[1].split()[-1]))
+    selected_slice = st.sidebar.selectbox("Select Slice", sorted_slices, format_func=lambda x: x[1])
+
+    # Add overlay and zoom options
+    overlay_type = st.sidebar.radio("Select Overlay", ["None", "Grad-CAM Heatmap", "Ground Truth Mask", "Predicted Mask"])
+    zoom_factor = st.sidebar.slider("Zoom Factor", min_value=1.0, max_value=10.0, step=0.1, value=2.0)
+
+    # Display the selected overlay
     slice_index = selected_slice[1].split()[-1]
     st.header(f"Patient {int(selected_patient)} | Region {int(selected_region)} | Slice {slice_index}")
     if overlay_type != "None":
@@ -167,3 +184,5 @@ if selected_patient and selected_region and selected_slice:
         original_image = load_npy(original_path) if original_path else None
         if original_image is not None:
             display_zoomable_image(original_image, zoom_factor=zoom_factor, file_name=file_name)
+else:
+    st.sidebar.warning("Please select a patient to proceed.")
