@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 from streamlit_image_zoom import image_zoom
 import matplotlib.pyplot as plt
+import io
 
 # Paths for demonstration purposes
 OUTPUT_MASK_DIR = "../Segmentation/model_outputs/NestedUNET_with_augmentation/Segmentation_output/NestedUNET_with_augmentation"
@@ -46,18 +47,47 @@ def combine_images(base_image, overlay=None, overlay_type=None):
 
     return (combined_image * 255).astype(np.uint8)
 
-def display_zoomable_image(base_image, overlay=None, overlay_type=None, zoom_factor=2.0):
-    """Display an image with zoom functionality using streamlit-image-zoom."""
+def export_file(data, file_type, file_name):
+    """Export data as a file for download."""
+    if file_type == "npy":
+        buffer = io.BytesIO()
+        np.save(buffer, data)
+        buffer.seek(0)
+        st.download_button(
+            label="Download as .npy",
+            data=buffer,
+            file_name=f"{file_name}.npy",
+            mime="application/octet-stream",
+        )
+    elif file_type == "png":
+        image = Image.fromarray(data)
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        buffer.seek(0)
+        st.download_button(
+            label="Download as .png",
+            data=buffer,
+            file_name=f"{file_name}.png",
+            mime="image/png",
+        )
+
+def display_zoomable_image(base_image, overlay=None, overlay_type=None, zoom_factor=2.0, file_name="exported_image"):
+    """Display an image with zoom functionality using streamlit-image-zoom and export options."""
     # Combine images
     combined_image = combine_images(base_image, overlay, overlay_type)
 
     # Convert to PIL Image
     pil_image = Image.fromarray(combined_image)
 
-    # Use streamlit-image-zoom for zooming
+    # Display image with zoom
     st.write("<div style='text-align: center;'>", unsafe_allow_html=True)  # Center the image
-    image_zoom(pil_image, mode="dragmove", size=750, zoom_factor=zoom_factor)  # Adjustable zoom
+    image_zoom(pil_image, mode="dragmove", size=750, zoom_factor=zoom_factor)
     st.write("</div>", unsafe_allow_html=True)
+
+    # Add export buttons
+    st.subheader("Export Options")
+    export_file(combined_image, "png", file_name)
+    export_file(base_image, "npy", f"{file_name}_original")
 
 def find_file_in_subfolder(base_dir, patient_id, file_name):
     """Search for the correct .npy file within the patient-specific subfolder."""
@@ -80,7 +110,7 @@ def display_overlay(patient_id, region_id, slice_name, overlay_type, zoom_factor
     overlay_image = load_npy(overlay_path) if overlay_path and os.path.exists(overlay_path) else None
 
     if original_image is not None:
-        display_zoomable_image(original_image, overlay_image, overlay_type, zoom_factor)
+        display_zoomable_image(original_image, overlay_image, overlay_type, zoom_factor, f"{patient_id}_region{region_id}_slice{slice_name}")
     else:
         st.warning("Original image not found.")
 
@@ -136,4 +166,4 @@ if selected_patient and selected_region and selected_slice:
         original_path = find_file_in_subfolder(IMAGE_DIR, int(selected_patient), file_name)
         original_image = load_npy(original_path) if original_path else None
         if original_image is not None:
-            display_zoomable_image(original_image, zoom_factor=zoom_factor)
+            display_zoomable_image(original_image, zoom_factor=zoom_factor, file_name=file_name)
