@@ -41,59 +41,36 @@ def parse_args():
 
     return args
 
-# NOTE: A green overlay for the predicted mask means that we have no predicted mask (for some unknown reason)
 def save_output(output, output_directory, test_image_paths, counter):
     label = test_image_paths[counter][-23:]
-    label = label.replace('NI', 'PD').replace('.npy', '.png')
+    label = label.replace('NI', 'PD').replace('.npy', '.npy')  # Save as .npy
 
-    # Load the original image
-    original_image_path = test_image_paths[counter]
-    original_image = np.load(original_image_path)
-    original_image = (original_image - original_image.min()) / (original_image.max() - original_image.min())  # Normalize
-
-    # Overlay the predicted mask on the original image
-    plt.figure(figsize=(10, 10))
-    plt.imshow(original_image, cmap="gray")  # Original image in grayscale
-    plt.imshow(output[0, :, :], cmap="jet", alpha=0.5)  # Process a single image
-    plt.colorbar()
-    plt.title("Predicted Mask Overlay")
-
-    # Save the overlay with the same naming convention
-    overlay_save_path = os.path.join(output_directory, label)
+    # Save the predicted mask directly as a .npy array
+    save_path = os.path.join(output_directory, label)
     os.makedirs(output_directory, exist_ok=True)
-    plt.savefig(overlay_save_path)
-    plt.close()
+    np.save(save_path, output[0, :, :])  # Save the raw mask as .npy
 
 
 def save_grad_cam(output, grad_cam_dir, test_image_paths, counter, grad_cam_generator):
     grad_cam_label = test_image_paths[counter][-23:]
-    grad_cam_label = grad_cam_label.replace('NI', 'GC').replace('.npy', '.png')
+    grad_cam_label = grad_cam_label.replace('NI', 'GC').replace('.npy', '.npy')  # Save as .npy
 
-    # Load the original image
-    original_image_path = test_image_paths[counter]
-    original_image = np.load(original_image_path)
-    original_image = (original_image - original_image.min()) / (original_image.max() - original_image.min())  # Normalize
-
-    # Enable gradient computation for Grad-CAM
+    # Generate the Grad-CAM heatmap
     with torch.set_grad_enabled(True):
         heatmap = grad_cam_generator.generate(
             torch.tensor(output[0, :, :]).unsqueeze(0).unsqueeze(0).cuda(),
             class_idx=0
         )
 
+    # Normalize the heatmap
     heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
 
-    # Overlay Grad-CAM heatmap on the original image
-    plt.figure(figsize=(10, 10))
-    plt.imshow(original_image, cmap="gray")
-    plt.imshow(heatmap, cmap="jet", alpha=0.5)
-    plt.colorbar()
-    plt.title("Grad-CAM Heatmap Overlay")
-
+    # Save the Grad-CAM heatmap directly as a .npy array
     grad_cam_save_path = os.path.join(grad_cam_dir, grad_cam_label)
     os.makedirs(grad_cam_dir, exist_ok=True)
-    plt.savefig(grad_cam_save_path)
-    plt.close()
+    np.save(grad_cam_save_path, heatmap)
+
+
 
 
 def calculate_fp(prediction_dir,mask_dir,distance_threshold=80):
