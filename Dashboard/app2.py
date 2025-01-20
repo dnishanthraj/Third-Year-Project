@@ -73,79 +73,23 @@ def export_file(data, file_type, file_name):
             mime="image/png",
         )
 
-def display_zoomable_image_with_annotation(base_image, overlay=None, overlay_type=None, file_name="exported_image"):
-    """Display an annotation canvas and export merged annotations with the original image."""
-    # Normalize and scale the base image for compatibility
-    base_image_normalized = (base_image - base_image.min()) / (base_image.max() - base_image.min())
-    base_image_uint8 = (base_image_normalized * 255).astype(np.uint8)
+def display_zoomable_image(base_image, overlay=None, overlay_type=None, zoom_factor=2.0, file_name="exported_image"):
+    """Display an image with zoom functionality using streamlit-image-zoom and export options."""
+    # Combine images
+    combined_image = combine_images(base_image, overlay, overlay_type)
 
-    
-    # Combine images with the overlay
-    combined_image = combine_images(base_image_uint8, overlay, overlay_type) if overlay is not None else base_image_uint8
+    # Convert to PIL Image
+    pil_image = Image.fromarray(combined_image)
 
+    # Display image with zoom
     st.write("<div style='text-align: center;'>", unsafe_allow_html=True)  # Center the image
-    image_zoom(combined_image, mode="dragmove", size=750, zoom_factor=zoom_factor)
+    image_zoom(pil_image, mode="dragmove", size=750, zoom_factor=zoom_factor)
     st.write("</div>", unsafe_allow_html=True)
 
-    # Annotation Canvas
-    st.subheader("Annotation Tool")
-    drawing_mode = st.sidebar.selectbox(
-        "Drawing Tool:",
-        ("freedraw", "line", "rect", "circle", "polygon", "point", "transform")
-    )
-    stroke_width = st.sidebar.slider("Stroke Width:", 1, 25, 3)
-    stroke_color = st.sidebar.color_picker("Stroke Color:", "#FF0000")
-    realtime_update = st.sidebar.checkbox("Realtime Update", True)
-
-    # Increase canvas size slightly
-    canvas_height = int(combined_image.shape[0] * 1.2)
-    canvas_width = int(combined_image.shape[1] * 1.2)
-
-    # Use expanded dimensions for canvas
-    canvas_result = st_canvas(
-        fill_color="rgba(0, 0, 0, 0)",  # Transparent fill
-        stroke_width=stroke_width,
-        stroke_color=stroke_color,
-        background_image=Image.fromarray(combined_image),  # Use combined image as the background
-        update_streamlit=realtime_update,
-        height=combined_image.shape[0],
-        width=combined_image.shape[1],
-        drawing_mode=drawing_mode,
-        display_toolbar=True,
-        key="annotation_canvas",
-    )
-
-    # Process the annotated image
-    if canvas_result.image_data is not None:
-        st.image(canvas_result.image_data, caption="Annotated Image")
-
-        # Convert annotated image to NumPy array
-        annotated_image = np.array(canvas_result.image_data, dtype=np.uint8)
-
-        # Resize annotated image back to match the base image dimensions
-        annotated_image_resized = np.array(
-            Image.fromarray(annotated_image).resize((base_image.shape[1], base_image.shape[0]))
-        )
-
-        # Blend annotations with the original image for export
-        combined_with_annotations = np.copy(base_image_normalized)  # Keep normalized base image
-        mask = annotated_image_resized[:, :, 3] > 0  # Use alpha channel to identify annotation areas
-        if mask.any():
-            # Combine annotations with the original image, blending colors
-            combined_with_annotations[mask] = (
-                combined_with_annotations[mask] * 0.5 + annotated_image_resized[mask, :3].mean(axis=1) / 255.0 * 0.5
-            )
-
-        # Export options
-        # Save as .npy, preserving normalized colors
-        export_file(combined_with_annotations, "npy", file_name)
-
-        # Save as .png with colors scaled to [0,255]
-        export_file((combined_with_annotations * 255).astype(np.uint8), "png", file_name)
-
-
-        
-
+    # Add export buttons
+    st.subheader("Export Options")
+    export_file(combined_image, "png", file_name)
+    export_file(base_image, "npy", f"{file_name}_original")
 
 def find_file_in_subfolder(base_dir, patient_id, file_name):
     """Search for the correct .npy file within the patient-specific subfolder."""
@@ -168,12 +112,9 @@ def display_overlay(patient_id, region_id, slice_name, overlay_type, zoom_factor
     overlay_image = load_npy(overlay_path) if overlay_path and os.path.exists(overlay_path) else None
 
     if original_image is not None:
-        display_zoomable_image_with_annotation(
-            original_image, overlay=overlay_image, overlay_type=overlay_type, file_name=f"{patient_id}_region{region_id}_slice{slice_name}"
-        )
+        display_zoomable_image(original_image, overlay_image, overlay_type, zoom_factor, f"{patient_id}_region{region_id}_slice{slice_name}")
     else:
         st.warning("Original image not found.")
-
 
 def parse_filenames(files, prefix):
     """Parse filenames to group by Patient ID, Region ID, and Slices."""
@@ -218,27 +159,32 @@ selected_patient = st.sidebar.multiselect(
     max_selections=1,  # Only one patient can be selected
 )
 
+# Check if a patient is selected
 if selected_patient:
     selected_patient = selected_patient[0]
+    
+    # Display region and slice dropdowns
     sorted_regions = sorted(output_masks_by_patient[selected_patient].keys(), key=lambda x: int(x))
     selected_region = st.sidebar.selectbox("Select Region", sorted_regions)
+    
     sorted_slices = sorted(output_masks_by_patient[selected_patient][selected_region], key=lambda x: int(x[1].split()[-1]))
     selected_slice = st.sidebar.selectbox("Select Slice", sorted_slices, format_func=lambda x: x[1])
 
+    # Add overlay and zoom options
     overlay_type = st.sidebar.radio("Select Overlay", ["None", "Grad-CAM Heatmap", "Ground Truth Mask", "Predicted Mask"])
     zoom_factor = st.sidebar.slider("Zoom Factor", min_value=1.0, max_value=10.0, step=0.1, value=2.0)
 
+    # Display the selected overlay
     slice_index = selected_slice[1].split()[-1]
     st.header(f"Patient {int(selected_patient)} | Region {int(selected_region)} | Slice {slice_index}")
-
-    overlay_code = "GC" if overlay_type == "Grad-CAM Heatmap" else "MA" if overlay_type == "Ground Truth Mask" else "PD" if overlay_type == "Predicted Mask" else None
     if overlay_type != "None":
+        overlay_code = "GC" if overlay_type == "Grad-CAM Heatmap" else "MA" if overlay_type == "Ground Truth Mask" else "PD"
         display_overlay(selected_patient, selected_region, slice_index, overlay_code, zoom_factor)
     else:
         file_name = f"{selected_patient}_NI{selected_region}_slice{slice_index}.npy"
         original_path = find_file_in_subfolder(IMAGE_DIR, int(selected_patient), file_name)
         original_image = load_npy(original_path) if original_path else None
         if original_image is not None:
-            display_zoomable_image_with_annotation(original_image, file_name=file_name)
+            display_zoomable_image(original_image, zoom_factor=zoom_factor, file_name=file_name)
 else:
     st.sidebar.warning("Please select a patient to proceed.")
