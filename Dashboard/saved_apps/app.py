@@ -6,6 +6,18 @@ from streamlit_image_zoom import image_zoom
 import matplotlib.pyplot as plt
 import io
 from streamlit_drawable_canvas import st_canvas
+import pandas as pd
+
+# Table displaying Dice Score and IoU Score for the selected slice
+def display_scores_table(dice_score=0.0, iou_score=0.0):
+    """Display a table with Dice Score and IoU Score."""
+    scores_data = {
+        "Metric": ["Dice Score", "IoU Score"],
+        "Value": [dice_score, iou_score],
+    }
+    scores_df = pd.DataFrame(scores_data)
+    st.subheader("Segmentation Metrics")
+    st.table(scores_df)
 
 
 # Paths for demonstration purposes
@@ -242,3 +254,14 @@ if selected_patient:
             display_zoomable_image_with_annotation(original_image, file_name=file_name)
 else:
     st.sidebar.warning("Please select a patient to proceed.")
+
+# After displaying the overlay or original image, add the table
+if selected_patient:
+    slice_index = selected_slice[1].split()[-1]
+
+    # Placeholder values for Dice Score and IoU Score
+    dice_score = 0.0  # Replace with actual computation
+    iou_score = 0.0  # Replace with actual computation
+
+    # Display the table below the image section
+    display_scores_table(dice_score, iou_score)
