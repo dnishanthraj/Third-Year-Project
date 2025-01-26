@@ -12,15 +12,13 @@ import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import yaml
 from sklearn.model_selection import train_test_split
-from scipy import ndimage as ndi
-from scipy.ndimage import label, generate_binary_structure
 from sklearn.metrics.pairwise import euclidean_distances
 from tqdm import tqdm
 from grad_cam import GradCAM
 
 
 from dataset import MyLidcDataset
-from metrics import iou_score,dice_coef,dice_coef2
+from metrics import *
 from utils import AverageMeter, str2bool
 
 from Unet.unet_model import UNet
@@ -70,89 +68,6 @@ def save_grad_cam(output, grad_cam_dir, test_image_paths, counter, grad_cam_gene
     os.makedirs(grad_cam_dir, exist_ok=True)
     np.save(grad_cam_save_path, heatmap)
 
-
-
-
-def calculate_fp(prediction_dir,mask_dir,distance_threshold=80):
-    """This calculates the fp by comparing the predicted mask and orginal mask"""
-    #TP,TN,FP,FN
-    #FN will always be zero here as all the mask contains a nodule
-    confusion_matrix =[0,0,0,0]
-    # This binary structure enables the function to recognize diagnoally connected label as same nodule.
-    s = generate_binary_structure(2,2)
-    print('Length of prediction dir is ',len(os.listdir(prediction_dir)))
-    for prediction in os.listdir(prediction_dir):
-        #print(confusion_matrix)
-        pid = 'LIDC-IDRI-'+prediction[:4]
-        mask_id = prediction.replace('PD','MA')
-        mask = np.load(mask_dir+'/'+pid+'/'+mask_id)
-        predict = np.load(prediction_dir+'/'+prediction)
-        answer_com = np.array(ndi.center_of_mass(mask))
-        # Patience is used to check if the patch has cropped the same image
-        patience =0
-        labeled_array, nf = label(predict, structure=s)
-        if nf>0:
-            for n in range(nf):
-                lab=np.array(labeled_array)
-                lab[lab!=(n+1)]=0
-                lab[lab==(n+1)]=1
-                predict_com=np.array(ndi.center_of_mass(labeled_array))
-                if np.linalg.norm(predict_com-answer_com,2) < distance_threshold:
-                    patience +=1
-                else:
-                    confusion_matrix[2]+=1
-            if patience > 0:
-                # Add to True Positive
-                confusion_matrix[0]+=1
-            else:
-                # Add to False Negative
-                # if the patience remains 0, and nf >0, it means that the slice contains both the TN and FP
-                confusion_matrix[3]+=1
-
-        else:
-            # Add False Negative since the UNET didn't detect a cancer even when there was one
-            confusion_matrix[3]+=1
-    return np.array(confusion_matrix)
-
-def calculate_fp_clean_dataset(prediction_dir,distance_threshold=80):
-    """This calculates the confusion matrix for clean dataset"""
-    #TP,TN,FP,FN
-    #When we calculate the confusion matrix for clean dataset, we can only get TP and FP.
-    # TP - There is no nodule, and the segmentation model predicted there is no nodule
-    # FP - There is no nodule, but the segmentation model predicted there is a nodule
-    confusion_matrix =[0,0,0,0]
-    s = generate_binary_structure(2,2)
-    for prediction in os.listdir(prediction_dir):
-        predict = np.load(prediction_dir+'/'+prediction)
-        # Patience is used to check if the patch has cropped the same image
-        patience =0
-        labeled_array, nf = label(predict, structure=s)
-        if nf>0:
-            previous_com = np.array([-1,-1])
-            for n in range(nf):
-                lab=np.array(labeled_array)
-                lab[lab!=(n+1)]=0
-                lab[lab==(n+1)]=1
-                predict_com=np.array(ndi.center_of_mass(labeled_array))
-                if previous_com[0] == -1:
-                    # add to false positive
-                    confusion_matrix[2]+=1
-                    previous_com = predict_com
-                    continue
-                else:
-                    if np.linalg.norm(previous_com-predict_com,2) > distance_threshold:
-                        if patience != 0:
-                            #print("This nodule has already been taken into account")
-                            continue
-                        # add false positive
-                        confusion_matrix[2]+=1
-                        patience +=1
-
-        else:
-            # Add True Negative since the UNET didn't detect a cancer even when there was one
-            confusion_matrix[1]+=1
-
-    return np.array(confusion_matrix)
 
 def main():
     args = vars(parse_args())
@@ -222,7 +137,11 @@ def main():
     model = model.cuda()
 
     # Use the deepest encoder layer for Grad-CAM
-    grad_cam = GradCAM(model, model.conv2_0)  # Adjust `model.conv2_0` to the appropriate layer
+    # grad_cam = GradCAM(model, model.conv2_0)  # Adjust `model.conv2_0` to the appropriate layer
+    # Use .module if DataParallel is used
+    # target_layer = model.module.conv2_0 if isinstance(model, nn.DataParallel) else model.conv2_0
+    grad_cam = GradCAM(model, model.conv2_0)
+
 
 
     # Data loading code
@@ -267,6 +186,7 @@ def main():
         drop_last=False,
         num_workers=12)
     model.eval()
+
     print(" ")
     print("Printing the first 5 image directories...",test_image_paths[:5])
     print("Printing the first 5 mask directories...",test_mask_paths[:5])
@@ -359,6 +279,44 @@ def main():
 
 
     confusion_matrix = calculate_fp(OUTPUT_MASK_DIR ,MASK_DIR,distance_threshold=80)
+
+
+
+    tp, tn, fp, fn = confusion_matrix
+
+    # Calculate additional metrics
+    precision = calculate_precision(tp, fp)
+    recall = calculate_recall(tp, fn)
+    fpps = calculate_fpps(fp, total_patients)
+
+    # Store metrics in a dictionary
+    metrics = OrderedDict([
+        ("Dice", avg_meters['dice'].avg),
+        ("IoU", avg_meters['iou'].avg),
+        ("Total Slices", len(test_image_paths)),
+        ("Total Patients", total_patients),
+        ("True Positive (TP)", tp),
+        ("True Negative (TN)", tn),
+        ("False Positive (FP)", fp),
+        ("False Negative (FN)", fn),
+        ("Precision", precision),
+        ("Recall", recall),
+        ("FPPS", fpps)
+    ])
+
+    # Define output directory for metrics
+    METRICS_DIR = os.path.join(os.getcwd(), 'model_outputs', folder, 'metrics')
+    os.makedirs(METRICS_DIR, exist_ok=True)
+
+    # Save metrics to CSV
+    save_metrics_to_csv(metrics, METRICS_DIR)
+
+    print("=" * 50)
+    for metric, value in metrics.items():
+        print(f"{metric}: {value:.4f}" if isinstance(value, float) else f"{metric}: {value}")
+    print("=" * 50)
+
+
     print("="*50)
     print("TP: {} FP:{}".format(confusion_matrix[0],confusion_matrix[2]))
     print("FN: {} TN:{}".format(confusion_matrix[3],confusion_matrix[1]))
@@ -402,12 +360,49 @@ def main():
             pbar.update(1)
         pbar.close()
     print("="*50)
+
     print('IoU: {:.4f}'.format(avg_meters['iou'].avg))
     print('DICE:{:.4f}'.format(avg_meters['dice'].avg))
+
+        # Calculate metrics for clean dataset
     clean_confusion_matrix = calculate_fp_clean_dataset(CLEAN_OUTPUT_MASK_DIR)
-    print(clean_confusion_matrix)
+
+    tp_clean, tn_clean, fp_clean, fn_clean = clean_confusion_matrix
+
+    # Calculate additional metrics for clean dataset
+    precision_clean = calculate_precision(tp_clean, fp_clean)
+    recall_clean = calculate_recall(tp_clean, fn_clean)
+    fpps_clean = calculate_fpps(fp_clean, clean_total_patients)
+
     confusion_matrix_total = clean_confusion_matrix + confusion_matrix
     total_patients += clean_total_patients
+
+    # Store metrics in a dictionary
+    metrics_clean = OrderedDict([
+        ("Dice", avg_meters['dice'].avg),
+        ("IoU", avg_meters['iou'].avg),
+        ("Total Slices", len(clean_test_image_paths)),
+        ("Total Patients", clean_total_patients),
+        ("True Positive (TP)", tp_clean),
+        ("True Negative (TN)", tn_clean),
+        ("False Positive (FP)", fp_clean),
+        ("False Negative (FN)", fn_clean),
+        ("Precision", precision_clean),
+        ("Recall", recall_clean),
+        ("FPPS", fpps_clean)
+    ])
+
+    # Save metrics for clean dataset
+    save_metrics_to_csv(metrics_clean, METRICS_DIR, filename="metrics_clean.csv")
+
+    # Print metrics for clean dataset
+    print("=" * 50)
+    print("Metrics for Clean Dataset:")
+    for metric, value in metrics_clean.items():
+        print(f"{metric}: {value:.4f}" if isinstance(value, float) else f"{metric}: {value}")
+    print("=" * 50)
+
+    print(clean_confusion_matrix)
     print("="*50)
     print("TP: {} FP:{}".format(confusion_matrix_total[0],confusion_matrix_total[2]))
     print("FN: {} TN:{}".format(confusion_matrix_total[3],confusion_matrix_total[1]))
@@ -415,7 +410,6 @@ def main():
     print("Number of total patients used for test are {}, among them clean patients are {}".format(total_patients,clean_total_patients))
     print("="*50)
     print(" ")
-
 
 
     torch.cuda.empty_cache()

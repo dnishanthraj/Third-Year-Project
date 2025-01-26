@@ -54,9 +54,26 @@ else:
 if selected_patient:
     slice_index = selected_slice[1].split()[-1]
 
-    # Placeholder values for Dice Score and IoU Score
-    dice_score = 0.0  # Replace with actual computation
-    iou_score = 0.0  # Replace with actual computation
+    # Load Predicted Mask and Ground Truth Mask
+    predicted_file_name = f"{selected_patient}_PD{selected_region}_slice{slice_index}.npy"
+    ground_truth_file_name = f"{selected_patient}_MA{selected_region}_slice{slice_index}.npy"
 
-    # Display the table below the image section
-    display_scores_table(dice_score, iou_score)
+    # Locate predicted mask directly in OUTPUT_MASK_DIR
+    predicted_path = find_file_in_dir(OUTPUT_MASK_DIR, predicted_file_name)
+
+    # Locate ground truth mask in patient-specific subfolder of MASK_DIR
+    ground_truth_path = find_file_in_subfolder(MASK_DIR, int(selected_patient), ground_truth_file_name)
+
+    if predicted_path and ground_truth_path:
+        predicted_mask = load_npy(predicted_path)
+        ground_truth_mask = load_npy(ground_truth_path)
+
+        if predicted_mask is not None and ground_truth_mask is not None:
+            # Display calculated metrics
+            display_scores_table(predicted_mask, ground_truth_mask)
+        else:
+            st.warning("Failed to load predicted or ground truth mask from file.")
+    else:
+        st.warning("Predicted or Ground Truth Mask file path not found.")
+
+

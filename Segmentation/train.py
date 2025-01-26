@@ -54,11 +54,11 @@ def parse_args():
     # model
     parser.add_argument('--name', default="UNET",
                         help='model name: UNET',choices=['UNET', 'NestedUNET'])
-    parser.add_argument('--epochs', default=90, type=int, metavar='N',
+    parser.add_argument('--epochs', default=100, type=int, metavar='N',
                         help='number of total epochs to run')
     parser.add_argument('-b', '--batch_size', default=8, type=int, #Changed default to 4 from 12
                         metavar='N', help='mini-batch size (default: 6)')
-    parser.add_argument('--early_stopping', default=10, type=int,
+    parser.add_argument('--early_stopping', default=20, type=int,
                         metavar='N', help='early stopping (default: 50)')
     parser.add_argument('--num_workers', default=12, type=int)
 

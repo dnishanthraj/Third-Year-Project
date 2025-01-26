@@ -4,11 +4,24 @@ import streamlit as st
 import numpy as np
 from PIL import Image
 import io
+import pandas as pd
+
+@st.cache_data
+def load_log_data(filepath):
+    """Load the log data from the specified filepath."""
+    if os.path.exists(filepath):
+        return pd.read_csv(filepath)
+    return None
 
 def find_file_in_subfolder(base_dir, patient_id, file_name):
     """Search for the correct .npy file within the patient-specific subfolder."""
     subfolder = os.path.join(base_dir, f"LIDC-IDRI-{patient_id:04d}")
     file_path = os.path.join(subfolder, file_name)
+    return file_path if os.path.exists(file_path) else None
+
+def find_file_in_dir(base_dir, file_name):
+    """Search for the correct .npy file in the base directory."""
+    file_path = os.path.join(base_dir, file_name)
     return file_path if os.path.exists(file_path) else None
 
 def parse_filenames(files, prefix):
