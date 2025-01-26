@@ -265,7 +265,7 @@ def main():
         shuffle=False,
         pin_memory=True,
         drop_last=False,
-        num_workers=6)
+        num_workers=12)
     model.eval()
     print(" ")
     print("Printing the first 5 image directories...",test_image_paths[:5])
@@ -308,7 +308,7 @@ def main():
         shuffle=False,
         pin_memory=True,
         drop_last=False,
-        num_workers=6)
+        num_workers=12)
 
     avg_meters = {'iou': AverageMeter(),
                   'dice': AverageMeter()}

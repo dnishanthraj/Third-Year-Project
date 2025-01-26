@@ -27,29 +27,37 @@ class MyLidcDataset(Dataset):
             albu.ElasticTransform(alpha=1.1,alpha_affine=0.5,sigma=5,p=0.15),
             albu.HorizontalFlip(p=0.15),
             albu.GaussNoise(var_limit=(10.0, 50.0), p=0.15),
-            albu.ElasticTransform(alpha=1.1, alpha_affine=0.5, sigma=5, p=0.15),
-            # albu.HorizontalFlip(p=0.15),
+            albu.RandomGamma(gamma_limit=(80, 120), p=0.15),  # Random gamma adjustment
+            albu.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.15),  # Contrast adjustment
+            albu.GaussianBlur(blur_limit=(3, 5), p=0.15),  # Gaussian blur
             ToTensorV2()
         ])
         self.transformations = transforms.Compose([transforms.ToTensor()])
+
     def transform(self, image, mask):
-        #Transform to tensor
+        # Normalize image to [0, 1] range
+        image = image - image.min()  # Shift minimum value to 0
+        if image.max() > 0:  # Avoid division by zero
+            image = image / image.max()
+
         if self.albumentation:
-            #It is always best to convert the make input to 3 dimensional for albumentation
-            image = image.reshape(512,512,1)
-            mask = mask.reshape(512,512,1)
-            # Without this conversion of datatype, it results in cv2 error. Seems like a bug
-            mask = mask.astype('uint8')
-            augmented=  self.albu_transformations(image=image,mask=mask)
+            # Ensure Albumentations expects correct shapes and types
+            image = image.reshape(512, 512, 1).astype('float32')
+            mask = mask.reshape(512, 512, 1).astype('uint8')
+
+            # Apply Albumentations
+            augmented = self.albu_transformations(image=image, mask=mask)
             image = augmented['image']
             mask = augmented['mask']
-            mask= mask.reshape([1,512,512])
+            mask = mask.reshape([1, 512, 512])
         else:
             image = self.transformations(image)
             mask = self.transformations(mask)
 
-        image,mask = image.type(torch.FloatTensor), mask.type(torch.FloatTensor)
-        return image,mask
+        # Convert to PyTorch tensors
+        image, mask = image.type(torch.FloatTensor), mask.type(torch.FloatTensor)
+        return image, mask
+
 
     def __getitem__(self, index):
         image = np.load(self.image_paths[index])
