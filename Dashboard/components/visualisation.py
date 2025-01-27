@@ -77,28 +77,29 @@ def display_zoomable_image_with_annotation(base_image, overlay=None, overlay_typ
         key="annotation_canvas",
     )
 
-    # Process the annotated image
     if canvas_result.image_data is not None:
-        st.image(canvas_result.image_data, caption="Annotated Image")
-
-        # Convert annotated image to NumPy array
+        # 1) Display the annotated image from canvas
         annotated_image = np.array(canvas_result.image_data, dtype=np.uint8)
+        st.image(annotated_image, caption="Annotated Image")
 
-        # Resize annotated image back to match the base image dimensions
+        # 2) Resize to match the original dimension
         annotated_image_resized = np.array(
             Image.fromarray(annotated_image).resize((base_image.shape[1], base_image.shape[0]))
-        )
+        )  # shape (H, W, 4)
 
-        # Blend annotations with the original image for export
-        combined_with_annotations = np.copy(base_image_normalized)  # Keep normalized base image
-        mask = annotated_image_resized[:, :, 3] > 0  # Use alpha channel to identify annotation areas
-        if mask.any():
-            # Combine annotations with the original image, blending colors
-            combined_with_annotations[mask] = (
-                combined_with_annotations[mask] * 0.5 + annotated_image_resized[mask, :3].mean(axis=1) / 255.0 * 0.5
-            )
+        # 3) Convert base image to (H, W, 3) float
+        base_image_normalized = (base_image - base_image.min()) / (base_image.max() - base_image.min())
+        base_image_rgb = np.stack([base_image_normalized]*3, axis=-1)  # shape (H, W, 3), float 0..1
 
-        # Export options
-        export_file(combined_with_annotations, "npy", file_name)
-        export_file((combined_with_annotations * 255).astype(np.uint8), "png", file_name)
+        # 4) Alpha blend
+        annot_resized_float = annotated_image_resized.astype(np.float32) / 255.0  # shape (H, W, 4)
+        alpha = annot_resized_float[..., 3:4]  # shape (H, W, 1)
+        annot_rgb = annot_resized_float[..., :3]  # shape (H, W, 3)
+
+        blended_rgb = alpha * annot_rgb + (1.0 - alpha) * base_image_rgb  # shape (H, W, 3), float 0..1
+
+        # 5) Export the combined color image
+        export_file(blended_rgb, "npy", file_name)  # Save as float in .npy
+    export_file((blended_rgb * 255).astype(np.uint8), "png", file_name)  # Save as PNG
+
 

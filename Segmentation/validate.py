@@ -272,7 +272,6 @@ def main():
         pbar.close()
 
 
-
     print("="*50)
     print('IoU: {:.4f}'.format(avg_meters['iou'].avg))
     print('DICE:{:.4f}'.format(avg_meters['dice'].avg))

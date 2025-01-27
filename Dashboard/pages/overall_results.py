@@ -76,14 +76,10 @@ else:
     else:
         st.warning("Please select at least one curve to display.")
 
-# Sidebar toggle for clean or no-clean metrics
+# Load the appropriate metrics file based on sidebar selection
 display_clean = st.sidebar.radio("Select Metrics Type", ["No Clean", "Clean"])
 
-# Load the appropriate metrics file based on the toggle
-if display_clean == "No Clean":
-    metrics_file = METRICS_FILE_PATH
-else:
-    metrics_file = METRICS_CLEAN_FILE_PATH
+metrics_file = METRICS_CLEAN_FILE_PATH if display_clean == "Clean" else METRICS_FILE_PATH
 
 try:
     metrics_data = pd.read_csv(metrics_file)
@@ -92,23 +88,31 @@ except FileNotFoundError:
     metrics_data = None
 
 if metrics_data is not None:
-    # Extract data from the selected metrics file
-    metrics_summary = {
-        "Metric": metrics_data["Metric"].tolist(),
-        "Result": metrics_data["Result"].tolist(),
-    }
-    metrics_df = pd.DataFrame(metrics_summary)
+    # Create a style function for color grading
+    def apply_color(row):
+        if row["Metric"] in ["Dice", "IoU", "Precision", "Recall", "FPPS"]:
+            color, _ = get_color_and_description_overall(row["Metric"], row["Result"])
+            return [color if col == "Result" else "" for col in row.index]
+        return [""] * len(row)
+
+    # Apply color grading
+    styled_table = metrics_data.style.format({"Result": "{:.4f}"}).apply(
+        apply_color,
+        axis=1,
+    )
 
     # Display Metrics Table
-    st.subheader("Metrics Summary")
+    st.subheader("Metrics Summary with Explanations")
     st.write(
-        f"Below is the table summarizing the overall performance metrics for lung nodule segmentation ({display_clean})."
+        f"Below is the table summarizing the performance metrics for lung nodule segmentation ({display_clean})."
     )
-    st.table(metrics_df)
+    st.table(styled_table)
 
-    # Add explanations or comments
-    st.write("**Key Highlights:**")
-    st.write("- **Dice Score** and **IoU** provide insights into segmentation performance.")
-    st.write("- **FPPS (False Positives per Scan)** evaluates false positives normalized by patient count.")
+    # Display explanations only for relevant metrics
+    st.write("**Metric Explanations:**")
+    for _, row in metrics_data.iterrows():
+        if row["Metric"] in ["Dice", "IoU", "Precision", "Recall", "FPPS"]:
+            _, description = get_color_and_description_overall(row["Metric"], row["Result"])
+            st.markdown(f"- **{row['Metric']}:** {description}")
 else:
     st.warning("Unable to display metrics summary as the file could not be loaded.")
