@@ -9,11 +9,11 @@ SEGMENTATION_DIR = Path(__file__).resolve().parents[2] / "Segmentation"
 sys.path.append(str(SEGMENTATION_DIR))
 
 # Import dice_coef and iou_score from Segmentation.metrics
-from metrics import dice_coef2, iou_score
+from metrics import dice_coef2, iou_score, calculate_precision, calculate_recall, calculate_fpps
 
 # Define color grading and contextual descriptions
 def get_color_and_description_slice(metric_name, score):
-    if metric_name == "Dice Score":
+    if metric_name == "Dice":
         if score >= 0.7:
             color = "background-color: #2ECC71; color: white;"  # Green
             description = "Excellent: The model performed very well, accurately predicting the majority of the region."
@@ -26,7 +26,7 @@ def get_color_and_description_slice(metric_name, score):
         else:
             color = "background-color: #E74C3C; color: white;"  # Red
             description = "Poor: The model failed to predict key areas of the region."
-    elif metric_name == "IoU Score":
+    elif metric_name == "IoU":
         if score >= 0.6:
             color = "background-color: #2ECC71; color: white;"  # Green
             description = "Excellent: High overlap between predicted and ground truth regions."
@@ -39,10 +39,11 @@ def get_color_and_description_slice(metric_name, score):
         else:
             color = "background-color: #E74C3C; color: white;"  # Red
             description = "Poor: Minimal overlap; the model failed to predict accurately."
+    
     return color, description
 
 def display_scores_table(predicted_mask, ground_truth_mask):
-    """Display a table with dynamically calculated Dice Score and IoU Score, including color and descriptions."""
+    """Display a table with dynamically calculated Dice Score and IoU Score, including descriptions."""
     predicted_tensor = torch.tensor(predicted_mask)
     ground_truth_tensor = torch.tensor(ground_truth_mask)
 
@@ -50,31 +51,29 @@ def display_scores_table(predicted_mask, ground_truth_mask):
     dice = dice_coef2(predicted_tensor, ground_truth_tensor).item()  # Ensure it's a Python float
     iou = iou_score(predicted_tensor, ground_truth_tensor).item()
 
-    # Create and style the table with color gradients
-    scores_data = {
-        "Metric": ["Dice Score", "IoU Score"],
-        "Value": [dice, iou],
-    }
-    scores_df = pd.DataFrame(scores_data)
+    # Prepare data with metrics, values, and descriptions
+    metrics_data = []
+    for metric_name, score in [("Dice", dice), ("IoU", iou)]:
+        _, description = get_color_and_description_slice(metric_name, score)
+        metrics_data.append({"Metric": metric_name, "Result": score, "Description": description})
 
-    # Apply color grading and contextual descriptions
-    styled_table = scores_df.style.format({"Value": "{:.3f}"}).apply(
-        lambda x: [
-            get_color_and_description_slice(x["Metric"], x["Value"])[0] if col == "Value" else ""
-            for col in scores_df.columns
-        ],
-        axis=1,
+    # Convert to DataFrame
+    metrics_df = pd.DataFrame(metrics_data)
+
+    # Styling function for the "Result" column
+    def apply_color(row):
+        color, _ = get_color_and_description_slice(row["Metric"], row["Result"])
+        return [color if col == "Result" else "" for col in row.index]
+
+    # Apply styling
+    styled_table = metrics_df.style.format({"Result": "{:.4f}"}).apply(
+        lambda row: apply_color(row), axis=1
     )
 
     # Display the table
     st.subheader("Segmentation Metrics with Explanations")
     st.table(styled_table)
 
-    # Display contextual descriptions
-    st.write("**Metric Explanations:**")
-    for _, row in scores_df.iterrows():
-        _, description = get_color_and_description_slice(row["Metric"], row["Value"])
-        st.markdown(f"**{row['Metric']}:** {description}")
 
 # Helper function: Color grading and descriptions for specific metrics
 def get_color_and_description_overall(metric, score):
