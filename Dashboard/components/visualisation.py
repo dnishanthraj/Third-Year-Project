@@ -103,3 +103,30 @@ def display_zoomable_image_with_annotation(base_image, overlay=None, overlay_typ
     export_file((blended_rgb * 255).astype(np.uint8), "png", file_name)  # Save as PNG
 
 
+def lighten_color(hex_color, factor=0.5):
+    """
+    Lightens the given color by mixing it with white.
+    factor=0.0 -> returns hex_color unmodified
+    factor=1.0 -> returns white
+    """
+    import re
+    # Clamp factor to [0..1]
+    factor = max(min(factor, 1.0), 0.0)
+
+    # Parse the hex string
+    hex_color = hex_color.strip("#")
+    # If shorthand like #abc, expand to #aabbcc
+    if len(hex_color) == 3:
+        hex_color = "".join([c*2 for c in hex_color])
+
+    # Convert to ints
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+
+    # Lighten by blending with white
+    r = int(r + (255 - r)*factor)
+    g = int(g + (255 - g)*factor)
+    b = int(b + (255 - b)*factor)
+
+    return "#{:02x}{:02x}{:02x}".format(r, g, b)

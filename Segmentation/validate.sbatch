@@ -16,6 +16,6 @@ source /etc/profile.d/conda.sh
 
 ## Execute your program(s) ##
 module load CUDA
-## python3.11 train.py --name UNET --augmentation True ##
-# python3.11 validate.py --name UNET --augmentation True
-python validate.py --name NestedUNET --augmentation True --folder NestedUNET_with_augmentation_20250126_131118_4f8e5884
+python validate.py --name NestedUNET --augmentation True --folder NestedUNET_base_20250127_191159_e121fa93
+
+# torchrun --nproc_per_node=NUM_GPUS validate.py ---name NestedUNET --augmentation True --folder NestedUNET_with_augmentation_20250126_131118_4f8e5884
