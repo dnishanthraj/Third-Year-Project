@@ -22,3 +22,62 @@ class BCEDiceLoss(nn.Module):
         dice = 1 - dice.sum() / num
 
         return 0.5 * bce + dice
+
+
+class BCEDiceFocalLoss(nn.Module):
+    """
+    Combines Focal Loss + Dice Loss for binary segmentation.
+    
+    focal_weight: How strongly to weight the focal component vs. dice.
+                  By default, we do 0.5 * focal + dice, but you can tune 
+                  or make it a parameter.
+    alpha, gamma: Standard Focal Loss hyperparameters.
+    """
+    def __init__(self, alpha=1.0, gamma=2.0, focal_weight=0.5):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.focal_weight = focal_weight
+
+    def forward(self, inputs, targets):
+        """
+        inputs: (N, 1, H, W) raw logits from model
+        targets: (N, 1, H, W) binary ground-truth mask
+        """
+        # ------------------------------------------------
+        # 1) Compute Focal Loss
+        # ------------------------------------------------
+        # BCE per-pixel, no reduction yet
+        bce_per_pixel = F.binary_cross_entropy_with_logits(
+            inputs, targets, reduction='none'
+        )
+        # Convert BCE to pt = exp(-bce)
+        pt = torch.exp(-bce_per_pixel)
+        # Focal loss factor = alpha * (1-pt)^gamma
+        focal_loss = self.alpha * (1 - pt) ** self.gamma * bce_per_pixel
+
+        # Average (or sum) over all pixels/batch
+        focal_loss = focal_loss.mean()
+
+        # ------------------------------------------------
+        # 2) Compute Dice Loss
+        # ------------------------------------------------
+        smooth = 1e-5
+        inputs_sigmoid = torch.sigmoid(inputs)
+        num = targets.size(0)
+        inputs_flat = inputs_sigmoid.view(num, -1)
+        targets_flat = targets.view(num, -1)
+
+        intersection = inputs_flat * targets_flat
+        dice_score = (2. * intersection.sum(dim=1) + smooth) / (
+            inputs_flat.sum(dim=1) + targets_flat.sum(dim=1) + smooth
+        )
+        dice_loss = 1 - dice_score.mean()
+
+        # ------------------------------------------------
+        # 3) Combine Focal and Dice
+        # ------------------------------------------------
+        # Example: 0.5 * focal + dice
+        loss = self.focal_weight * focal_loss + dice_loss
+
+        return loss

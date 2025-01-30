@@ -24,7 +24,6 @@ def apply_grad_cam(file_path, model_path, save_path):
     model = NestedUNet(num_classes=1)
     model.load_state_dict(torch.load(model_path, map_location=torch.device('cuda'), weights_only=True))
     model.eval().cuda()
-
     # Use the deepest encoder layer `conv4_0` for Grad-CAM
     target_layer = model.conv2_0
 
