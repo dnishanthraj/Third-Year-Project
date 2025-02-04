@@ -81,3 +81,42 @@ class BCEDiceFocalLoss(nn.Module):
         loss = self.focal_weight * focal_loss + dice_loss
 
         return loss
+    
+class FocalLoss(nn.Module):
+    """
+    Standard Focal Loss for binary segmentation/classification.
+    
+    alpha: weighting factor for positive examples (helps with class imbalance).
+    gamma: focusing parameter that down-weights easy examples.
+           Higher gamma places more focus on hard, misclassified examples.
+    """
+    def __init__(self, alpha=1.0, gamma=2.0, reduction='mean'):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        """
+        inputs: raw logits of shape (N, 1, H, W) or (N,) for binary classification
+        targets: binary labels (same shape as inputs), 0 or 1
+        """
+        # 1) Compute binary cross-entropy for each pixel without reduction.
+        bce_per_pixel = F.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
+
+        # 2) Convert BCE to pt = exp(-bce)
+        pt = torch.exp(-bce_per_pixel)
+
+        # 3) Focal Loss factor = alpha * (1 - pt)^gamma
+        focal_term = self.alpha * (1 - pt) ** self.gamma
+
+        # 4) Combine
+        focal_loss = focal_term * bce_per_pixel
+
+        # 5) Reduction
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss

@@ -26,7 +26,7 @@ from sklearn.model_selection import KFold
 import albumentations as albu
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
-from losses import BCEDiceLoss, BCEDiceFocalLoss
+from losses import BCEDiceLoss, BCEDiceFocalLoss, FocalLoss
 from dataset import MyLidcDataset
 from metrics import iou_score,dice_coef
 from utils import AverageMeter, str2bool
@@ -254,11 +254,12 @@ def main():
 
     #criterion = nn.BCEWithLogitsLoss().cuda()
     # criterion = BCEDiceLoss().cuda()
-    criterion = BCEDiceFocalLoss(
-    alpha=1.0,      # typical focal parameter
-    gamma=2.0,      # typical focal parameter
-    focal_weight=0.5
-).cuda()
+    # criterion = BCEDiceFocalLoss(
+    # alpha=1.0,      # typical focal parameter
+    # gamma=2.0,      # typical focal parameter
+    # focal_weight=0.5
+    # ).cuda()
+    criterion = FocalLoss(alpha=1.0, gamma=2.0, reduction='mean')
     cudnn.benchmark = True  # Was False - change to True?
     # cudnn.deterministic = True
 
