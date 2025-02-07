@@ -164,3 +164,21 @@ def calculate_fp_clean_dataset(prediction_dir,distance_threshold=80):
             confusion_matrix[1]+=1
 
     return np.array(confusion_matrix)
+
+def calculate_accuracy(tp, tn, fp, fn):
+    total = tp + tn + fp + fn
+    if total == 0:
+        return 0.0
+    return (tp + tn) / total
+
+
+def calculate_specificity(tn, fp):
+    if tn + fp == 0:
+        return 0.0
+    return tn / (tn + fp)
+
+
+def calculate_f1_score(precision, recall):
+    if precision + recall == 0:
+        return 0.0
+    return 2 * (precision * recall) / (precision + recall)

@@ -80,7 +80,6 @@ def display_scores_table(predicted_mask, ground_truth_mask):
     st.table(styled_table)
 
 
-# Helper function: Color grading and descriptions for specific metrics
 def get_color_and_description_overall(metric, score):
     if metric == "Dice":
         if score >= 0.7:
@@ -95,6 +94,7 @@ def get_color_and_description_overall(metric, score):
         else:
             color = "background-color: #E74C3C; color: white;"  # Red
             description = "Poor performance with minimal overlap."
+
     elif metric == "IoU":
         if score >= 0.6:
             color = "background-color: #2ECC71; color: white;"
@@ -108,6 +108,7 @@ def get_color_and_description_overall(metric, score):
         else:
             color = "background-color: #E74C3C; color: white;"
             description = "Poor overlap with little correspondence."
+
     elif metric == "Precision":
         if score >= 0.75:
             color = "background-color: #2ECC71; color: white;"
@@ -118,6 +119,7 @@ def get_color_and_description_overall(metric, score):
         else:
             color = "background-color: #E74C3C; color: white;"
             description = "Low precision with many false positives."
+
     elif metric == "Recall":
         if score >= 0.75:
             color = "background-color: #2ECC71; color: white;"
@@ -128,6 +130,7 @@ def get_color_and_description_overall(metric, score):
         else:
             color = "background-color: #E74C3C; color: white;"
             description = "Low recall; significant true positives are missed."
+
     elif metric == "FPPS":
         if score <= 2.0:
             color = "background-color: #2ECC71; color: white;"
@@ -138,10 +141,58 @@ def get_color_and_description_overall(metric, score):
         else:
             color = "background-color: #E74C3C; color: white;"
             description = "High false positives; potential over-segmentation."
+
+    # ----------------------------
+    # NEW: Accuracy, Specificity, F1-Score
+    # ----------------------------
+    elif metric == "Accuracy":
+        if score >= 0.8:
+            color = "background-color: #2ECC71; color: white;"
+            description = "High overall correctness."
+        elif 0.6 <= score < 0.8:
+            color = "background-color: #F1C40F; color: black;"
+            description = "Moderate correctness; room for improvement."
+        elif 0.4 <= score < 0.6:
+            color = "background-color: #E67E22; color: white;"
+            description = "Fair correctness; model struggles in many cases."
+        else:
+            color = "background-color: #E74C3C; color: white;"
+            description = "Low correctness; model frequently misclassifies."
+
+    elif metric == "Specificity":
+        if score >= 0.8:
+            color = "background-color: #2ECC71; color: white;"
+            description = "High specificity; few false alarms."
+        elif 0.6 <= score < 0.8:
+            color = "background-color: #F1C40F; color: black;"
+            description = "Moderate specificity; false positives are noticeable."
+        elif 0.4 <= score < 0.6:
+            color = "background-color: #E67E22; color: white;"
+            description = "Fair specificity; many false positives present."
+        else:
+            color = "background-color: #E74C3C; color: white;"
+            description = "Low specificity; frequent false positives."
+
+    elif metric == "F1-Score":
+        if score >= 0.75:
+            color = "background-color: #2ECC71; color: white;"
+            description = "High F1-score; good balance of precision and recall."
+        elif 0.5 <= score < 0.75:
+            color = "background-color: #F1C40F; color: black;"
+            description = "Moderate F1-score; decent balance but can improve."
+        elif 0.3 <= score < 0.5:
+            color = "background-color: #E67E22; color: white;"
+            description = "Fair F1-score; the model misses or misclassifies quite a few instances."
+        else:
+            color = "background-color: #E74C3C; color: white;"
+            description = "Low F1-score; struggles to get both precision and recall right."
+
     else:
         color = ""
         description = "No description available."
+
     return color, description
+
 
 def run_t_test(series_a, series_b):
     """

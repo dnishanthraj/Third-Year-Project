@@ -4,7 +4,8 @@ import numpy as np
 from components import *
 
 # Static Header Title
-st.title("Explainable XAI for Lung Nodule Segmentation - Slice Results")
+st.title("Slice Viewer")
+st.markdown("---")
 
 # Dynamically resolve the paths to the `model_outputs` folder
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -139,3 +140,5 @@ if selected_patient:
             st.warning("Failed to load predicted or ground truth mask from file.")
     else:
         st.warning("Predicted or Ground Truth Mask file path not found.")
+
+st.markdown("---")

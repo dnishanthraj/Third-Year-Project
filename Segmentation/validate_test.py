@@ -23,7 +23,7 @@ from UnetNested.Nested_Unet import NestedUNet  # Note: changed variable name to 
 
 # Import local modules
 from dataset import MyLidcDataset
-from metrics import (iou_score, dice_coef2, calculate_fp, calculate_fp_clean_dataset,
+from metrics import (iou_score, dice_coef2, calculate_fp, calculate_fp_clean_dataset, calculate_accuracy, calculate_f1_score, calculate_specificity, 
                      calculate_precision, calculate_recall, calculate_fpps, save_metrics_to_csv)
 from utils import AverageMeter, str2bool
 from grad_cam import GradCAM
@@ -405,6 +405,9 @@ def main():
     precision = calculate_precision(tp, fp)
     recall = calculate_recall(tp, fn)
     fpps = calculate_fpps(fp, total_patients)
+    accuracy = calculate_accuracy(tp, tn, fp, fn)
+    specificity = calculate_specificity(tn, fp)
+    f1_score = calculate_f1_score(precision, recall)
     metrics = OrderedDict([
         ("Dice", avg_meters['dice'].avg),
         ("IoU", avg_meters['iou'].avg),
@@ -416,7 +419,10 @@ def main():
         ("False Negative (FN)", fn),
         ("Precision", precision),
         ("Recall", recall),
-        ("FPPS", fpps)
+        ("FPPS", fpps),
+        ("Accuracy", accuracy),  # Add Accuracy
+        ("Specificity", specificity),  # Add Specificity
+        ("F1-Score", f1_score)  # Add F1-Score
     ])
     save_metrics_to_csv(metrics, METRICS_DIR)
     print("Raw metrics (Normal) saved.")
@@ -453,6 +459,10 @@ def main():
     precision_clean = calculate_precision(tp_clean, fp_clean)
     recall_clean = calculate_recall(tp_clean, fn_clean)
     fpps_clean = calculate_fpps(fp_clean, clean_total_patients)
+    accuracy_clean = calculate_accuracy(tp_clean, tn_clean, fp_clean, fn_clean)
+    specificity_clean = calculate_specificity(tn_clean, fp_clean)
+    f1_score_clean = calculate_f1_score(precision_clean, recall_clean)
+    
     metrics_clean = OrderedDict([
         ("Dice", avg_meters_clean['dice'].avg),
         ("IoU", avg_meters_clean['iou'].avg),
@@ -464,7 +474,10 @@ def main():
         ("False Negative (FN)", fn_clean),
         ("Precision", precision_clean),
         ("Recall", recall_clean),
-        ("FPPS", fpps_clean)
+        ("FPPS", fpps_clean),
+        ("Accuracy", accuracy_clean),  # Add Accuracy
+        ("Specificity", specificity_clean),  # Add Specificity
+        ("F1-Score", f1_score_clean)  # Add F1-Score
     ])
     save_metrics_to_csv(metrics_clean, METRICS_DIR, filename="metrics_clean.csv")
     print("Raw metrics (Clean) saved.")
@@ -509,6 +522,9 @@ def main():
     precision_fpr = calculate_precision(tp_fpr, fp_fpr)
     recall_fpr = calculate_recall(tp_fpr, fn_fpr)
     fpps_fpr = calculate_fpps(fp_fpr, total_patients)
+    accuracy_fpr = calculate_accuracy(tp_fpr, tn_fpr, fp_fpr, fn_fpr)
+    specificity_fpr = calculate_specificity(tn_fpr, fp_fpr)
+    f1_score_fpr = calculate_f1_score(precision_fpr, recall_fpr)
     metrics_fpr = OrderedDict([
         ("Dice", avg_meters_fpr['dice'].avg),
         ("IoU", avg_meters_fpr['iou'].avg),
@@ -520,7 +536,10 @@ def main():
         ("False Negative (FN)", fn_fpr),
         ("Precision", precision_fpr),
         ("Recall", recall_fpr),
-        ("FPPS", fpps_fpr)
+        ("FPPS", fpps_fpr),
+        ("Accuracy", accuracy_fpr),  # Add Accuracy
+        ("Specificity", specificity_fpr),  # Add Specificity
+        ("F1-Score", f1_score_fpr)  # Add F1-Score
     ])
     save_metrics_to_csv(metrics_fpr, METRICS_DIR, filename="metrics_fpr.csv")
     print("FPR metrics (Normal) saved.")
@@ -571,6 +590,10 @@ def main():
     precision_clean_fpr = calculate_precision(tp_clean_fpr, fp_clean_fpr)
     recall_clean_fpr = calculate_recall(tp_clean_fpr, fn_clean_fpr)
     fpps_clean_fpr = calculate_fpps(fp_clean_fpr, clean_total_patients)
+    accuracy_clean_fpr = calculate_accuracy(tp_clean_fpr, tn_clean_fpr, fp_clean_fpr, fn_clean_fpr)
+    specificity_clean_fpr = calculate_specificity(tn_clean_fpr, fp_clean_fpr)
+    f1_score_clean_fpr = calculate_f1_score(precision_clean_fpr, recall_clean_fpr)
+    
     metrics_fpr_clean = OrderedDict([
         ("Dice", avg_meters_fpr_clean['dice'].avg),
         ("IoU", avg_meters_fpr_clean['iou'].avg),
@@ -582,7 +605,10 @@ def main():
         ("False Negative (FN)", fn_clean_fpr),
         ("Precision", precision_clean_fpr),
         ("Recall", recall_clean_fpr),
-        ("FPPS", fpps_clean_fpr)
+        ("FPPS", fpps_clean_fpr),
+        ("Accuracy", accuracy_clean_fpr),  # Add Accuracy
+        ("Specificity", specificity_clean_fpr),  # Add Specificity
+        ("F1-Score", f1_score_clean_fpr)  # Add F1-Score
     ])
     save_metrics_to_csv(metrics_fpr_clean, METRICS_DIR, filename="metrics_fpr_clean.csv")
     print("FPR metrics (Clean) saved.")
