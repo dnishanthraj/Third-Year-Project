@@ -16,6 +16,9 @@ st.set_page_config(page_title="Overall Results", layout="wide")
 # ---------------------------------------------------
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 MODEL_OUTPUTS_DIR = os.path.join(ROOT_DIR, "Project", "Segmentation", "model_outputs")
+# Near the top, after imports, or immediately before you use folder_settings
+if "folder_settings" not in st.session_state:
+    st.session_state["folder_settings"] = {}
 
 # ---------------------------------------------------
 # COLLECT ALL AVAILABLE FOLDERS
@@ -146,13 +149,11 @@ colors_for_folders = {
 # EXTRA SIDEBAR: PER-FOLDER METRIC SETTINGS (Single Folder)
 # ---------------------------------------------------
 st.sidebar.markdown("### Choose Group Results")
-st.sidebar.markdown("""
-Toggle between Clean/Without Clean and Raw/FPR Results for each group.
-""")
+st.sidebar.markdown("""Toggle between Clean/Without Clean and Raw/FPR Results for each group.""")
+
 with st.sidebar.expander("Per-Folder Metric Settings", expanded=False):
     st.markdown("Select a folder to configure its metric settings:")
 
-    # Create a mapping: "Custom Label (original folder)" -> folder
     folder_options = {folder_labels.get(folder, folder): folder for folder in selected_folders}
     selected_folder_label = st.selectbox("Folder", list(folder_options.keys()))
     selected_folder = folder_options[selected_folder_label]
@@ -164,17 +165,18 @@ with st.sidebar.expander("Per-Folder Metric Settings", expanded=False):
         ["Raw", "FPR"],
         key=f"metrics_source_{selected_folder}"
     )
-
     clean_option = st.radio(
         "Include Clean Set",
         ["No Clean", "Clean"],
         key=f"display_clean_{selected_folder}"
     )
 
-    folder_settings = {selected_folder: {
+    # Save to session_state so all folders can have their own config
+    st.session_state["folder_settings"][selected_folder] = {
         "metrics_source": metric_source,
         "display_clean": clean_option
-    }}
+    }
+
 
 
 
@@ -437,16 +439,18 @@ else:
 # ---------------------------------------------------
 comparison_data_dict = {}
 for folder in selected_folders:
-    f_settings = folder_settings[folder]
+    # If missing, default to Raw + No Clean
+    f_settings = st.session_state["folder_settings"].get(folder, {
+        "metrics_source": "Raw",
+        "display_clean": "No Clean"
+    })
     folder_data, _ = process_folder(
         folder,
         display_clean=f_settings["display_clean"],
         metrics_source=f_settings["metrics_source"]
     )
-    if folder_data is not None:
-        comparison_data_dict[folder] = folder_data
-    else:
-        comparison_data_dict[folder] = pd.DataFrame()
+    comparison_data_dict[folder] = folder_data if folder_data is not None else pd.DataFrame()
+
 
 # ---------------------------------------------------
 # 3) TEST RESULTS SCATTER CHART

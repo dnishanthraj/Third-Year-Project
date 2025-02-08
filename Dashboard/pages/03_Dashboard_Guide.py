@@ -4,7 +4,7 @@ import os
 # Configure the page
 st.set_page_config(page_title="Dashboard Guide", layout="wide")
 
-st.title("Dashboard Guide & Terminology")
+st.title("Dashboard Guide")
 st.markdown("---")
 st.markdown("""
 This guide explains the key concepts, metrics, and functionality of the Lung Nodule Segmentation Dashboard. Whether you are new to machine learning or simply need a refresher on clinical metrics, this page is here to help.
