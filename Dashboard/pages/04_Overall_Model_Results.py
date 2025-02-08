@@ -10,6 +10,7 @@ from components import (
     get_color_and_description_overall, load_log_data, lighten_color, run_statistical_tests
 )
 
+st.set_page_config(page_title="Overall Results", layout="wide")
 # ---------------------------------------------------
 # PATH SETUP
 # ---------------------------------------------------
@@ -43,6 +44,15 @@ Use groups to color-code multiple folders.
 You can also leave folders ungrouped (select **No Group** later).
 """)
 
+# 1) Put "No Group" settings in its own expander
+groups_dict = {}
+with st.sidebar.expander("No Group Settings", expanded=False):
+    no_group_name = st.text_input("Name for No Group", value="No Group", key="no_group_name")
+    no_group_color = st.color_picker("Color for No Group", "#999999", key="color_no_group")
+
+# Store the users chosen name/color in our dictionary
+groups_dict[no_group_name] = no_group_color
+
 num_groups = st.sidebar.number_input(
     "Number of Additional Groups",
     min_value=0,
@@ -51,16 +61,7 @@ num_groups = st.sidebar.number_input(
     help="Enter how many named groups you want to define (excluding the default 'No Group')."
 )
 
-# Always include "No Group"
-groups_dict = {}
 st.sidebar.markdown("**Define Your Groups**")
-
-# Color picker for "No Group"
-no_group_color = st.sidebar.color_picker("Color for 'No Group'", "#999999", key="color_no_group")
-groups_dict["No Group"] = no_group_color
-
-st.sidebar.write("Below, configure each group you want to create:")
-
 for i in range(num_groups):
     exp_label = f"Group {i+1} Settings"
     with st.sidebar.expander(exp_label, expanded=False):
@@ -70,22 +71,21 @@ for i in range(num_groups):
         groups_dict[group_name] = group_color
 
 # ---------------------------------------------------
-# SIDEBAR: ASSIGN FOLDERS TO GROUPS
+# SIDEBAR: ASSIGN FOLDERS TO GROUPS (COLLAPSED)
 # ---------------------------------------------------
-st.sidebar.markdown("### Assign Folders to Groups")
-st.sidebar.markdown("""
-Here, choose which group each folder belongs to.  
-By default, a folder can stay under **No Group** if you don't wish to group it.
-""")
-
-folder_to_group = {}
-for folder in selected_folders:
-    assigned_group = st.sidebar.selectbox(
-        f"Group for folder: {folder}",
-        list(groups_dict.keys()),  # includes "No Group" plus any custom groups
-        key=f"group_select_{folder}"
-    )
-    folder_to_group[folder] = assigned_group
+with st.sidebar.expander("Assign Folders to Groups", expanded=False):
+    st.markdown(f"""
+    Here, choose which group each folder belongs to.  
+    By default, a folder can stay under **{no_group_name}** if you don't wish to group it.
+    """)
+    folder_to_group = {}
+    for folder in selected_folders:
+        assigned_group = st.selectbox(
+            f"Group for folder: {folder}",
+            list(groups_dict.keys()),  # includes your renamed 'No Group' plus any custom groups
+            key=f"group_select_{folder}"
+        )
+        folder_to_group[folder] = assigned_group
 
 # ---------------------------------------------------
 # MAP EACH FOLDER TO ITS GROUP COLOR
@@ -96,32 +96,31 @@ colors_for_folders = {
 }
 
 # ---------------------------------------------------
-# EXTRA SIDEBAR: RAW/FPR & CLEAN/NO CLEAN PER FOLDER
+# EXTRA SIDEBAR: RAW/FPR & CLEAN/NO CLEAN PER FOLDER (COLLAPSED)
 # ---------------------------------------------------
-st.sidebar.markdown("---")
-st.sidebar.markdown("### Per-Folder Metric Settings")
-st.sidebar.markdown("""
-Pick whether to use **Raw** or **FPR** metrics,  
-and whether to include **Clean** slices or not.
-""")
-
-folder_settings = {}
-for folder in selected_folders:
-    st.sidebar.markdown(f"**Folder: {folder}**")
-    selected_metric_source = st.sidebar.radio(
-        f"Segmentation Source ({folder})",
-        ["Raw", "FPR"],
-        key=f"metrics_source_{folder}"
-    )
-    selected_clean_option = st.sidebar.radio(
-        f"Include Clean Set? ({folder})",
-        ["No Clean", "Clean"],
-        key=f"display_clean_{folder}"
-    )
-    folder_settings[folder] = {
-        "metrics_source": selected_metric_source,
-        "display_clean": selected_clean_option
-    }
+with st.sidebar.expander("Per-Folder Metric Settings", expanded=False):
+    st.markdown("""
+    Pick whether to use **Raw** or **FPR** metrics,  
+    and whether to include **Clean** slices or not.
+    """)
+    
+    folder_settings = {}
+    for folder in selected_folders:
+        st.markdown(f"**Folder: {folder}**")
+        selected_metric_source = st.radio(
+            f"Segmentation Source ({folder})",
+            ["Raw", "FPR"],
+            key=f"metrics_source_{folder}"
+        )
+        selected_clean_option = st.radio(
+            f"Include Clean Set? ({folder})",
+            ["No Clean", "Clean"],
+            key=f"display_clean_{folder}"
+        )
+        folder_settings[folder] = {
+            "metrics_source": selected_metric_source,
+            "display_clean": selected_clean_option
+        }
 
 # ---------------------------------------------------
 # METRIC ORDER & HELPER: Additional metrics
@@ -138,12 +137,10 @@ def compute_additional_metrics(metrics_dict):
       { "Dice": ..., "IoU": ..., "True Positive (TP)": ... etc. }
     compute Accuracy, Specificity, and F1-Score if possible, and store them back.
     """
-    # Safely extract
     TP = metrics_dict.get("True Positive (TP)", 0)
     TN = metrics_dict.get("True Negative (TN)", 0)
     FP = metrics_dict.get("False Positive (FP)", 0)
     FN = metrics_dict.get("False Negative (FN)", 0)
-
     total = TP + TN + FP + FN
 
     # Accuracy
@@ -153,7 +150,7 @@ def compute_additional_metrics(metrics_dict):
     else:
         metrics_dict["Accuracy"] = 0.0
 
-    # Specificity (TN / (TN + FP))
+    # Specificity
     denom_sp = TN + FP
     if denom_sp > 0:
         specificity = TN / denom_sp
@@ -161,7 +158,7 @@ def compute_additional_metrics(metrics_dict):
     else:
         metrics_dict["Specificity"] = 0.0
 
-    # F1-Score = 2 * Precision * Recall / (Precision + Recall)
+    # F1-Score
     precision = metrics_dict.get("Precision", 0)
     recall = metrics_dict.get("Recall", 0)
     denom_f1 = precision + recall
@@ -202,15 +199,11 @@ def process_folder(folder, display_clean, metrics_source):
         st.warning(f"Metrics or log file not found for '{folder}'.")
         return None, None
 
-    # Convert the "no_clean" and "clean" CSVs to dict for easy merging
-    # keys => "Metric", value => "Result"
     no_clean_dict = metrics_data_no_clean.set_index("Metric").to_dict()["Result"]
     clean_dict = metrics_data_clean.set_index("Metric").to_dict()["Result"]
 
-    # Combine if user chose "Clean", else just use the no-clean dictionary
     if display_clean == "Clean":
         combined = {}
-        # Summations
         combined["Total Slices"] = no_clean_dict["Total Slices"] + clean_dict["Total Slices"]
         combined["Total Patients"] = no_clean_dict["Total Patients"] + clean_dict["Total Patients"]
 
@@ -225,45 +218,34 @@ def process_folder(folder, display_clean, metrics_source):
         combined["False Negative (FN)"] = FN
 
         total_slices = combined["Total Slices"]
-
-        # Weighted average for dice, iou
         if total_slices > 0:
             combined["Dice"] = (
-                no_clean_dict["Dice"] * no_clean_dict["Total Slices"]
-                + clean_dict["Dice"] * clean_dict["Total Slices"]
+                no_clean_dict["Dice"] * no_clean_dict["Total Slices"] +
+                clean_dict["Dice"] * clean_dict["Total Slices"]
             ) / total_slices
             combined["IoU"] = (
-                no_clean_dict["IoU"] * no_clean_dict["Total Slices"]
-                + clean_dict["IoU"] * clean_dict["Total Slices"]
+                no_clean_dict["IoU"] * no_clean_dict["Total Slices"] +
+                clean_dict["IoU"] * clean_dict["Total Slices"]
             ) / total_slices
         else:
             combined["Dice"] = 0.0
             combined["IoU"] = 0.0
 
-        # Precision, Recall, FPPS
         combined["Precision"] = calculate_precision(TP, FP)
         combined["Recall"] = calculate_recall(TP, FN)
         combined["FPPS"] = calculate_fpps(FP, combined["Total Patients"])
 
-        # Compute new metrics: Accuracy, Specificity, F1-Score
+        # Additional metrics
         combined = compute_additional_metrics(combined)
-
-        # Build final DataFrame
-        metrics_final = pd.DataFrame(
-            [{"Metric": k, "Result": v} for k, v in combined.items()]
-        )
+        metrics_final = pd.DataFrame([{"Metric": k, "Result": v} for k, v in combined.items()])
 
     else:
-        # No Clean => just use metrics_data_no_clean as the base
-        # but ensure we have Accuracy, Specificity, F1, etc.
+        # No Clean
         base_dict = no_clean_dict.copy()
-
-        # If they're not already in CSV, compute them:
         TP = base_dict.get("True Positive (TP)", 0)
         TN = base_dict.get("True Negative (TN)", 0)
         FP = base_dict.get("False Positive (FP)", 0)
         FN = base_dict.get("False Negative (FN)", 0)
-        # If missing, compute them here:
         if "Precision" not in base_dict:
             base_dict["Precision"] = calculate_precision(TP, FP)
         if "Recall" not in base_dict:
@@ -271,15 +253,9 @@ def process_folder(folder, display_clean, metrics_source):
         if "FPPS" not in base_dict:
             patients = base_dict.get("Total Patients", 0)
             base_dict["FPPS"] = calculate_fpps(FP, patients)
-
-        # Also ensure "Dice" and "IoU" are present (they typically are).
-        # Then compute extras:
+        
         base_dict = compute_additional_metrics(base_dict)
-
-        # Build final DataFrame
-        metrics_final = pd.DataFrame(
-            [{"Metric": k, "Result": v} for k, v in base_dict.items()]
-        )
+        metrics_final = pd.DataFrame([{"Metric": k, "Result": v} for k, v in base_dict.items()])
 
     # Sort by METRIC_ORDER
     metrics_final["Order"] = metrics_final["Metric"].apply(
@@ -290,7 +266,6 @@ def process_folder(folder, display_clean, metrics_source):
                      .drop(columns=["Order"])
                      .set_index("Metric")
     )
-    # Rename column to the folder name
     metrics_final.columns = [folder]
 
     return metrics_final, log_data
@@ -340,28 +315,22 @@ show_validation = st.checkbox("Show Validation Curves", value=True)
 
 layers = []
 for folder, log_df in logs_data.items():
-    # Check if the chosen metric column exists
     train_col = graph_metric.lower()
     val_col = f"val_{graph_metric.lower()}"
-
     if train_col not in log_df.columns and val_col not in log_df.columns:
         continue
 
-    # Main color vs. Validation color (lighter)
     main_color = colors_for_folders.get(folder, "#000000")
     val_color = lighten_color(main_color, factor=0.5)
 
-    # Build a small data frame for the chosen metric
     chart_data = pd.DataFrame({"epoch": log_df["epoch"]})
     if show_training and train_col in log_df.columns:
         chart_data["training"] = log_df[train_col]
     if show_validation and val_col in log_df.columns:
         chart_data["validation"] = log_df[val_col]
 
-    # Melt so we can plot training & validation in a single chart
     melted = chart_data.melt(id_vars="epoch", var_name="type", value_name="value")
 
-    # Plot lines
     train_line = (
         alt.Chart(melted)
         .transform_filter("datum.type == 'training'")
@@ -373,7 +342,6 @@ for folder, log_df in logs_data.items():
             tooltip=["epoch", "value"]
         )
     )
-
     val_line = (
         alt.Chart(melted)
         .transform_filter("datum.type == 'validation'")
@@ -397,11 +365,9 @@ else:
     st.write("No valid columns found to plot (missing training/validation logs).")
 
 # ---------------------------------------------------
-# 2) PROCESS SELECTED FOLDERS -> BUILD ONE DICTIONARY
-#    FOR METRICS ACROSS ALL FOLDERS
+# 2) PROCESS SELECTED FOLDERS -> BUILD ONE DICTIONARY FOR METRICS
 # ---------------------------------------------------
 comparison_data_dict = {}
-
 for folder in selected_folders:
     f_settings = folder_settings[folder]
     folder_data, _ = process_folder(
@@ -422,44 +388,34 @@ st.markdown("""
 Choose which metric to compare across all folders. Each point represents one folder, colored by the group.
 """)
 
-# Gather each folders DataFrame into a list
 final_metrics_list = []
 for folder, metrics_df in comparison_data_dict.items():
     if not metrics_df.empty:
         final_metrics_list.append(metrics_df)
 
 if final_metrics_list:
-    # Concatenate them side by side. We will have an index of metrics and columns = folder names
     final_metrics_df = pd.concat(final_metrics_list, axis=1)
-
-    # Choose which metrics to offer for scatter
     candidate_metrics = ["Dice", "IoU", "Precision", "Recall", "Specificity", "Accuracy", "F1-Score", "FPPS"]
-    # Filter only those actually present in the DataFrames index
     candidate_metrics = [m for m in candidate_metrics if m in final_metrics_df.index]
 
     if candidate_metrics:
         chosen_metric = st.selectbox("Select a Metric for Scatter", candidate_metrics)
-        # Extract the row for that metric
         if chosen_metric in final_metrics_df.index:
             selected_metric_series = final_metrics_df.loc[chosen_metric]
         else:
             st.warning(f"No data for metric '{chosen_metric}'.")
             selected_metric_series = pd.Series(dtype=float)
 
-        # Build a DataFrame for Altair: "Folder", "Value", "GroupColor"
         scatter_data = []
         for folder_name in selected_metric_series.index:
             val = selected_metric_series[folder_name]
             scatter_data.append({
                 "Folder": folder_name,
                 "Value": val,
-                "Group": folder_to_group[folder_name],   # or just store color
+                "Group": folder_to_group[folder_name],
             })
-
         scatter_df = pd.DataFrame(scatter_data)
 
-        # We'll color by the group (but each folder has the same group color).
-        # A typical approach: domain=unique groups, range=colors_for_folders ?
         unique_groups = scatter_df["Group"].unique().tolist()
         group_color_map = {g: groups_dict[g] for g in unique_groups if g in groups_dict}
 
@@ -483,7 +439,6 @@ if final_metrics_list:
                 title=f"{chosen_metric} Across Folders"
             )
         )
-
         st.altair_chart(scatter_chart, use_container_width=True)
     else:
         st.warning("No suitable metrics found for the scatter chart.")
@@ -493,100 +448,97 @@ else:
 # ---------------------------------------------------
 # 4) PER-FOLDER METRICS + CONFUSION MATRIX
 # ---------------------------------------------------
+
 st.subheader("3) Folder Metrics & Confusion Matrix")
 st.markdown("""
-Each folder's confusion matrix is labeled with the metric name and value (e.g., "TP=50").  
-Additional metrics (Dice, IoU, Accuracy, Precision, Recall, Specificity, F1-Score, FPPS, etc.) appear below.
+Choose a folder from the dropdown below to see that folder's confusion matrix and other metrics.  
+We'll show only one folder at a time.
 """)
 
-for folder in selected_folders:
-    st.markdown(f"### {folder}")
+if selected_folders:
+    chosen_folder = st.selectbox("Select a folder to view metrics", selected_folders)
 
-    # Retrieve the DataFrame for this folder
-    folder_df = comparison_data_dict[folder]
-    if folder_df.empty:
-        st.write("No metrics found for this folder.")
-        continue
-
-    # Confusion matrix values
-    def safe_val(metric_name):
-        """Helper to safely get a metric from folder_df."""
-        if metric_name in folder_df.index and folder in folder_df.columns:
-            return folder_df.loc[metric_name, folder]
+    # Wrap folder metrics in an expander
+    with st.expander(f"View Metrics for: {chosen_folder}", expanded=True):
+        folder_df = comparison_data_dict[chosen_folder]
+        if folder_df.empty:
+            st.write("No metrics found for this folder.")
         else:
-            return 0
+            # --- Confusion Matrix ---
+            def safe_val(metric_name):
+                if metric_name in folder_df.index and chosen_folder in folder_df.columns:
+                    return folder_df.loc[metric_name, chosen_folder]
+                else:
+                    return 0
 
-    TP = safe_val("True Positive (TP)")
-    TN = safe_val("True Negative (TN)")
-    FP = safe_val("False Positive (FP)")
-    FN = safe_val("False Negative (FN)")
+            TP = safe_val("True Positive (TP)")
+            TN = safe_val("True Negative (TN)")
+            FP = safe_val("False Positive (FP)")
+            FN = safe_val("False Negative (FN)")
 
-    cm_data = [
-        ["", "Predicted Positive", "Predicted Negative"],
-        ["Actual Positive", f"TP={TP}", f"FN={FN}"],
-        ["Actual Negative", f"FP={FP}", f"TN={TN}"]
-    ]
-    df_cm = pd.DataFrame(cm_data)
+            cm_data = [
+                ["", "Predicted Positive", "Predicted Negative"],
+                ["Actual Positive", f"TP={TP}", f"FN={FN}"],
+                ["Actual Negative", f"FP={FP}", f"TN={TN}"]
+            ]
+            df_cm = pd.DataFrame(cm_data)
 
-    def style_cm(df):
-        # color each of the 4 main cells
-        color_map = pd.DataFrame("", index=df.index, columns=df.columns)
-        # Mapping row/col -> which metric it corresponds to
-        # row 1 col 1 => TP, row 1 col 2 => FN, row 2 col 1 => FP, row 2 col 2 => TN
-        cell_map = {
-            (1, 1): ("True Positive (TP)", "TP"),
-            (1, 2): ("False Negative (FN)", "FN"),
-            (2, 1): ("False Positive (FP)", "FP"),
-            (2, 2): ("True Negative (TN)", "TN")
-        }
-        for (r, c), (metric_name, _) in cell_map.items():
-            cell_val = df.iloc[r, c]  # e.g. "TP=50"
-            match = re.search(r"=(\d+\.?\d*)", cell_val)
-            val = float(match.group(1)) if match else 0.0
-            bg, _ = get_color_and_description_overall(metric_name, val)
-            color_map.iloc[r, c] = f"background-color: {bg}"
-        return color_map
+            def style_cm(df):
+                color_map = pd.DataFrame("", index=df.index, columns=df.columns)
+                cell_map = {
+                    (1, 1): ("True Positive (TP)", "TP"),
+                    (1, 2): ("False Negative (FN)", "FN"),
+                    (2, 1): ("False Positive (FP)", "FP"),
+                    (2, 2): ("True Negative (TN)", "TN")
+                }
+                for (r, c), (metric_name, _) in cell_map.items():
+                    cell_val = df.iloc[r, c]
+                    match = re.search(r"=(\d+\.?\d*)", cell_val)
+                    val = float(match.group(1)) if match else 0.0
+                    bg, _ = get_color_and_description_overall(metric_name, val)
+                    color_map.iloc[r, c] = f"background-color: {bg}"
+                return color_map
 
-    st.write("**Confusion Matrix:**")
-    st.table(df_cm.style.apply(style_cm, axis=None))
+            st.write("**Confusion Matrix:**")
+            st.table(df_cm.style.apply(style_cm, axis=None))
 
-    # Display the remaining metrics
-    confusion_metrics = {
-        "True Positive (TP)", "True Negative (TN)",
-        "False Positive (FP)", "False Negative (FN)"
-    }
-    rows_other = []
-    for metric in folder_df.index:
-        if metric in confusion_metrics:
-            continue
-        score = folder_df.loc[metric, folder]
-        bg, desc = get_color_and_description_overall(metric, score)
-        rows_other.append({
-            "Metric": metric,
-            "Result": score,
-            "Description": desc
-        })
+            # --- Other Metrics Table ---
+            confusion_metrics = {
+                "True Positive (TP)", "True Negative (TN)",
+                "False Positive (FP)", "False Negative (FN)"
+            }
+            rows_other = []
+            for metric in folder_df.index:
+                if metric in confusion_metrics:
+                    continue
+                score = folder_df.loc[metric, chosen_folder]
+                bg, desc = get_color_and_description_overall(metric, score)
+                rows_other.append({
+                    "Metric": metric,
+                    "Result": score,
+                    "Description": desc
+                })
 
-    if rows_other:
-        df_other = pd.DataFrame(rows_other)
+            if rows_other:
+                df_other = pd.DataFrame(rows_other)
 
-        def apply_colors(row):
-            c, _ = get_color_and_description_overall(row["Metric"], row["Result"])
-            return [c if col == "Result" else "" for col in row.index]
+                def apply_colors(row):
+                    c, _ = get_color_and_description_overall(row["Metric"], row["Result"])
+                    return [c if col == "Result" else "" for col in row.index]
 
-        st.write("**Other Metrics:**")
-        st.table(
-            df_other.style
-                   .format({"Result": "{:.4f}"})
-                   .apply(apply_colors, axis=1)
-        )
-    else:
-        st.write("No additional metrics to display.")
+                st.write("**Other Metrics:**")
+                st.table(
+                    df_other.style
+                           .format({"Result": "{:.4f}"})
+                           .apply(apply_colors, axis=1)
+                )
+            else:
+                st.write("No additional metrics to display.")
+
 
 st.markdown("---")
-st.markdown("""
+st.markdown(f"""
 **Tip:**  
 If you have a large number of groups, keep group expanders collapsed 
-to avoid a very long sidebar. You can also define fewer groups if 
-you don't need extensive color distinctions.
+to avoid a very long sidebar. Folders can remain in **{no_group_name}** if you don't wish to group them further.
 """)

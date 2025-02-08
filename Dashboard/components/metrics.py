@@ -76,7 +76,6 @@ def display_scores_table(predicted_mask, ground_truth_mask):
     )
 
     # Display the table
-    st.subheader("Segmentation Metrics with Explanations")
     st.table(styled_table)
 
 
