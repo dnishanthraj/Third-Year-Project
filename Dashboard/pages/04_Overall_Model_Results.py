@@ -36,6 +36,18 @@ selected_folders = st.sidebar.multiselect(
 )
 
 # ---------------------------------------------------
+# SIDEBAR: RENAME FOLDERS (NEW)
+# ---------------------------------------------------
+with st.sidebar.expander("Rename Folders", expanded=False):
+    st.markdown("Provide custom labels for each folder:")
+    folder_labels = {}
+    for folder in selected_folders:
+        # The default value is the original folder name; users can change it.
+        new_label = st.text_input(f"Label for folder '{folder}':", value=folder, key=f"rename_{folder}")
+        folder_labels[folder] = new_label
+
+
+# ---------------------------------------------------
 # SIDEBAR: CREATE GROUPS
 # ---------------------------------------------------
 st.sidebar.markdown("### Create Groups")
@@ -80,12 +92,15 @@ with st.sidebar.expander("Assign Folders to Groups", expanded=False):
     """)
     folder_to_group = {}
     for folder in selected_folders:
+        # Show both the custom label and the original folder name
+        display_name = f"{folder_labels.get(folder, folder)} ({folder})"
         assigned_group = st.selectbox(
-            f"Group for folder: {folder}",
+            f"Group for folder: {display_name}",
             list(groups_dict.keys()),  # includes your renamed 'No Group' plus any custom groups
             key=f"group_select_{folder}"
         )
         folder_to_group[folder] = assigned_group
+
 
 # ---------------------------------------------------
 # MAP EACH FOLDER TO ITS GROUP COLOR
@@ -96,31 +111,36 @@ colors_for_folders = {
 }
 
 # ---------------------------------------------------
-# EXTRA SIDEBAR: RAW/FPR & CLEAN/NO CLEAN PER FOLDER (COLLAPSED)
+# EXTRA SIDEBAR: PER-FOLDER METRIC SETTINGS (Single Folder)
 # ---------------------------------------------------
 with st.sidebar.expander("Per-Folder Metric Settings", expanded=False):
-    st.markdown("""
-    Pick whether to use **Raw** or **FPR** metrics,  
-    and whether to include **Clean** slices or not.
-    """)
+    st.markdown("Select a folder to configure its metric settings:")
+    # Create a mapping: "Custom Label (original folder)" -> folder
+    folder_options = {f"{folder_labels.get(folder, folder)} ({folder})": folder for folder in selected_folders}
+    selected_folder_option = st.selectbox("Folder", list(folder_options.keys()))
+    selected_folder = folder_options[selected_folder_option]
+    st.markdown(f"**Configure settings for: {selected_folder_option}**")
     
-    folder_settings = {}
-    for folder in selected_folders:
-        st.markdown(f"**Folder: {folder}**")
-        selected_metric_source = st.radio(
-            f"Segmentation Source ({folder})",
-            ["Raw", "FPR"],
-            key=f"metrics_source_{folder}"
-        )
-        selected_clean_option = st.radio(
-            f"Include Clean Set? ({folder})",
-            ["No Clean", "Clean"],
-            key=f"display_clean_{folder}"
-        )
-        folder_settings[folder] = {
-            "metrics_source": selected_metric_source,
-            "display_clean": selected_clean_option
-        }
+    metric_source = st.radio(
+         f"Segmentation Source for {selected_folder_option}",
+         ["Raw", "FPR"],
+         key=f"metrics_source_{selected_folder}"
+    )
+    clean_option = st.radio(
+         f"Include Clean Set for {selected_folder_option}",
+         ["No Clean", "Clean"],
+         key=f"display_clean_{selected_folder}"
+    )
+    
+    # Store these settings in a dictionary
+    # (If you wish to support settings for multiple folders,
+    # consider using st.session_state to persist values across selections.)
+    folder_settings = {selected_folder: {
+         "metrics_source": metric_source,
+         "display_clean": clean_option
+    }}
+
+
 
 # ---------------------------------------------------
 # METRIC ORDER & HELPER: Additional metrics
@@ -355,7 +375,8 @@ for folder, log_df in logs_data.items():
     )
 
     group_name = folder_to_group[folder]
-    chart_layer = alt.layer(train_line, val_line).properties(title=f"{group_name} - {folder}")
+    # Use folder_labels[folder] instead of folder
+    chart_layer = alt.layer(train_line, val_line).properties(title=f"{group_name} - {folder_labels[folder]}")
     layers.append(chart_layer)
 
 if layers:
@@ -410,7 +431,7 @@ if final_metrics_list:
         for folder_name in selected_metric_series.index:
             val = selected_metric_series[folder_name]
             scatter_data.append({
-                "Folder": folder_name,
+                "Folder": folder_labels[folder_name],  # Use the custom label here
                 "Value": val,
                 "Group": folder_to_group[folder_name],
             })
@@ -456,8 +477,9 @@ We'll show only one folder at a time.
 """)
 
 if selected_folders:
-    chosen_folder = st.selectbox("Select a folder to view metrics", selected_folders)
-
+    label_to_folder = {f"{folder_labels.get(folder, folder)} ({folder})": folder for folder in selected_folders}
+    chosen_label = st.selectbox("Select a folder to view metrics", list(label_to_folder.keys()))
+    chosen_folder = label_to_folder[chosen_label]
     # Wrap folder metrics in an expander
     with st.expander(f"View Metrics for: {chosen_folder}", expanded=True):
         folder_df = comparison_data_dict[chosen_folder]
