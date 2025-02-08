@@ -482,7 +482,7 @@ if final_metrics_list:
         for folder_name in selected_metric_series.index:
             val = selected_metric_series[folder_name]
             scatter_data.append({
-                "Folder": folder_labels[folder_name],  # Use the custom label here
+                "Folder": folder_labels.get(folder_name, folder_name),  # Use the custom label here
                 "Value": val,
                 "Group": folder_to_group[folder_name],
             })
@@ -528,7 +528,10 @@ We'll show only one folder at a time.
 """)
 
 if selected_folders:
-    label_to_folder = {f"{folder_labels.get(folder, folder)} ({folder})": folder for folder in selected_folders}
+    label_to_folder = {
+        folder_labels.get(folder, folder): folder
+        for folder in selected_folders
+    }
     chosen_label = st.selectbox("Select a folder to view metrics", list(label_to_folder.keys()))
     chosen_folder = label_to_folder[chosen_label]
     # Wrap folder metrics in an expander
