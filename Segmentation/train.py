@@ -253,13 +253,13 @@ def main():
         print('-' * 20)
 
     #criterion = nn.BCEWithLogitsLoss().cuda()
-    # criterion = BCEDiceLoss().cuda()
+    criterion = BCEDiceLoss().cuda()
     # criterion = BCEDiceFocalLoss(
     # alpha=1.0,      # typical focal parameter
     # gamma=2.0,      # typical focal parameter
     # focal_weight=0.5
     # ).cuda()
-    criterion = FocalLoss(alpha=1.0, gamma=2.0, reduction='mean')
+    # criterion = FocalLoss(alpha=1.0, gamma=2.0, reduction='mean')
     cudnn.benchmark = True  # Was False - change to True?
     # cudnn.deterministic = True
 

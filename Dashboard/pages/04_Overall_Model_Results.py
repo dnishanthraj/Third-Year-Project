@@ -29,23 +29,53 @@ available_folders = [
 # SIDEBAR: SELECT FOLDERS FOR COMPARISON
 # ---------------------------------------------------
 st.sidebar.markdown("### Select Folders to Compare")
+st.sidebar.markdown("Pick one or more folders.")
+
 selected_folders = st.sidebar.multiselect(
-    "Pick one or more model folders",
+    "Folders",  # Label required but will be hidden
     available_folders,
-    default=[available_folders[0]] if available_folders else []
+    default=[available_folders[0]] if available_folders else [],
+    label_visibility="collapsed"  # Hides the label without adding extra spacing
 )
+
+
+# Error handling if no folder is selected
+if not selected_folders:
+    st.sidebar.warning("Please select at least one folder to continue.")
+    st.stop()
+
 
 # ---------------------------------------------------
 # SIDEBAR: RENAME FOLDERS (NEW)
 # ---------------------------------------------------
 with st.sidebar.expander("Rename Folders", expanded=False):
     st.markdown("Provide custom labels for each folder:")
-    folder_labels = {}
-    for folder in selected_folders:
-        # The default value is the original folder name; users can change it.
-        new_label = st.text_input(f"Label for folder '{folder}':", value=folder, key=f"rename_{folder}")
-        folder_labels[folder] = new_label
 
+    if selected_folders:
+        # Dropdown to select which folder to rename
+        selected_folder_for_rename = st.selectbox(
+            "Select a folder to rename", 
+            selected_folders, 
+            key="rename_folder_select"
+        )
+
+        # Text input for renaming the selected folder
+        new_label = st.text_input(
+            f"New label for '{selected_folder_for_rename}':",
+            value=selected_folder_for_rename,
+            key=f"rename_{selected_folder_for_rename}"
+        )
+
+        # ?? IMPORTANT: Store the renamed label as "NewLabel (OriginalFolder)"
+        # so it's consistent anywhere you use folder_labels:
+        if 'folder_labels' not in st.session_state:
+            st.session_state['folder_labels'] = {}
+        st.session_state['folder_labels'][selected_folder_for_rename] = f"{new_label} ({selected_folder_for_rename})"
+
+    else:
+        st.warning("No folders available for renaming.")
+
+folder_labels = st.session_state.get('folder_labels', {})
 
 # ---------------------------------------------------
 # SIDEBAR: CREATE GROUPS
@@ -73,7 +103,7 @@ num_groups = st.sidebar.number_input(
     help="Enter how many named groups you want to define (excluding the default 'No Group')."
 )
 
-st.sidebar.markdown("**Define Your Groups**")
+
 for i in range(num_groups):
     exp_label = f"Group {i+1} Settings"
     with st.sidebar.expander(exp_label, expanded=False):
@@ -90,16 +120,18 @@ with st.sidebar.expander("Assign Folders to Groups", expanded=False):
     Here, choose which group each folder belongs to.  
     By default, a folder can stay under **{no_group_name}** if you don't wish to group it.
     """)
+    
     folder_to_group = {}
     for folder in selected_folders:
-        # Show both the custom label and the original folder name
-        display_name = f"{folder_labels.get(folder, folder)} ({folder})"
+        # Ensure we only show the final renamed format
+        display_name = folder_labels.get(folder, folder)  # This already includes "(OriginalFolder)" if renamed
         assigned_group = st.selectbox(
-            f"Group for folder: {display_name}",
-            list(groups_dict.keys()),  # includes your renamed 'No Group' plus any custom groups
+            f"Group for folder: {display_name}",  # No redundant formatting
+            list(groups_dict.keys()),  # Includes 'No Group' and custom groups
             key=f"group_select_{folder}"
         )
         folder_to_group[folder] = assigned_group
+
 
 
 # ---------------------------------------------------
@@ -113,32 +145,37 @@ colors_for_folders = {
 # ---------------------------------------------------
 # EXTRA SIDEBAR: PER-FOLDER METRIC SETTINGS (Single Folder)
 # ---------------------------------------------------
+st.sidebar.markdown("### Choose Group Results")
+st.sidebar.markdown("""
+Toggle between Clean/Without Clean and Raw/FPR Results for each group.
+""")
 with st.sidebar.expander("Per-Folder Metric Settings", expanded=False):
     st.markdown("Select a folder to configure its metric settings:")
+
     # Create a mapping: "Custom Label (original folder)" -> folder
-    folder_options = {f"{folder_labels.get(folder, folder)} ({folder})": folder for folder in selected_folders}
-    selected_folder_option = st.selectbox("Folder", list(folder_options.keys()))
-    selected_folder = folder_options[selected_folder_option]
-    st.markdown(f"**Configure settings for: {selected_folder_option}**")
-    
+    folder_options = {folder_labels.get(folder, folder): folder for folder in selected_folders}
+    selected_folder_label = st.selectbox("Folder", list(folder_options.keys()))
+    selected_folder = folder_options[selected_folder_label]
+
+    st.markdown(f"**Configure settings for: {selected_folder_label}**")
+
     metric_source = st.radio(
-         f"Segmentation Source for {selected_folder_option}",
-         ["Raw", "FPR"],
-         key=f"metrics_source_{selected_folder}"
+        "Segmentation Source",
+        ["Raw", "FPR"],
+        key=f"metrics_source_{selected_folder}"
     )
+
     clean_option = st.radio(
-         f"Include Clean Set for {selected_folder_option}",
-         ["No Clean", "Clean"],
-         key=f"display_clean_{selected_folder}"
+        "Include Clean Set",
+        ["No Clean", "Clean"],
+        key=f"display_clean_{selected_folder}"
     )
-    
-    # Store these settings in a dictionary
-    # (If you wish to support settings for multiple folders,
-    # consider using st.session_state to persist values across selections.)
+
     folder_settings = {selected_folder: {
-         "metrics_source": metric_source,
-         "display_clean": clean_option
+        "metrics_source": metric_source,
+        "display_clean": clean_option
     }}
+
 
 
 
@@ -343,13 +380,20 @@ for folder, log_df in logs_data.items():
     main_color = colors_for_folders.get(folder, "#000000")
     val_color = lighten_color(main_color, factor=0.5)
 
+    # ?? Add a label column for tooltip display
     chart_data = pd.DataFrame({"epoch": log_df["epoch"]})
+    chart_data["folder_label"] = folder_labels.get(folder, folder)
+
     if show_training and train_col in log_df.columns:
         chart_data["training"] = log_df[train_col]
     if show_validation and val_col in log_df.columns:
         chart_data["validation"] = log_df[val_col]
 
-    melted = chart_data.melt(id_vars="epoch", var_name="type", value_name="value")
+    melted = chart_data.melt(
+        id_vars=["epoch", "folder_label"], 
+        var_name="type", 
+        value_name="value"
+    )
 
     train_line = (
         alt.Chart(melted)
@@ -359,9 +403,10 @@ for folder, log_df in logs_data.items():
             x=alt.X("epoch:Q", title="Epoch"),
             y=alt.Y("value:Q", title=graph_metric),
             color=alt.value(main_color),
-            tooltip=["epoch", "value"]
+            tooltip=["epoch", "value", "folder_label"]
         )
     )
+
     val_line = (
         alt.Chart(melted)
         .transform_filter("datum.type == 'validation'")
@@ -370,13 +415,15 @@ for folder, log_df in logs_data.items():
             x=alt.X("epoch:Q", title="Epoch"),
             y=alt.Y("value:Q", title=graph_metric),
             color=alt.value(val_color),
-            tooltip=["epoch", "value"]
+            tooltip=["epoch", "value", "folder_label"]
         )
     )
 
+    # Title uses your group name + the renamed label
     group_name = folder_to_group[folder]
-    # Use folder_labels[folder] instead of folder
-    chart_layer = alt.layer(train_line, val_line).properties(title=f"{group_name} - {folder_labels[folder]}")
+    chart_layer = alt.layer(train_line, val_line).properties(
+        title=f"{group_name} - {folder_labels.get(folder, folder)}"
+    )
     layers.append(chart_layer)
 
 if layers:
