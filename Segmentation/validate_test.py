@@ -270,10 +270,10 @@ def main():
     GRAD_CAM_DIR = os.path.join(base_dir, 'model_outputs', folder, 'Grad_CAM_output', NAME)
     os.makedirs(OUTPUT_MASK_DIR, exist_ok=True)
     os.makedirs(GRAD_CAM_DIR, exist_ok=True)
-    FPR_OUTPUT_MASK_DIR = os.path.join(base_dir, 'model_outputs', folder, 'Segmentation_output', NAME + '_fpr')
-    FPR_GRAD_CAM_DIR = os.path.join(base_dir, 'model_outputs', folder, 'Grad_CAM_output', NAME + '_fpr')
-    os.makedirs(FPR_OUTPUT_MASK_DIR, exist_ok=True)
-    os.makedirs(FPR_GRAD_CAM_DIR, exist_ok=True)
+    # FPR_OUTPUT_MASK_DIR = os.path.join(base_dir, 'model_outputs', folder, 'Segmentation_output', NAME + '_fpr')
+    # FPR_GRAD_CAM_DIR = os.path.join(base_dir, 'model_outputs', folder, 'Grad_CAM_output', NAME + '_fpr')
+    # os.makedirs(FPR_OUTPUT_MASK_DIR, exist_ok=True)
+    # os.makedirs(FPR_GRAD_CAM_DIR, exist_ok=True)
     METRICS_DIR = os.path.join(base_dir, 'model_outputs', folder, 'metrics')
     os.makedirs(METRICS_DIR, exist_ok=True)
 
@@ -350,10 +350,10 @@ def main():
     clean_test_mask_paths = list(clean_test_meta['mask_image'])
     clean_total_patients = len(clean_test_meta.groupby('patient_id'))
 
-    test_dataset = MyLidcDataset(test_image_paths, test_mask_paths)
+    test_dataset = MyLidcDataset(test_image_paths, test_mask_paths, return_pid=True)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=config['batch_size'],
                                                 shuffle=False, pin_memory=True, drop_last=False, num_workers=12)
-    clean_test_dataset = MyLidcDataset(clean_test_image_paths, clean_test_mask_paths)
+    clean_test_dataset = MyLidcDataset(clean_test_image_paths, clean_test_mask_paths, return_pid=True)
     clean_test_loader = torch.utils.data.DataLoader(clean_test_dataset, batch_size=config['batch_size'],
                                                      shuffle=False, pin_memory=True, drop_last=False, num_workers=12)
 
@@ -373,11 +373,13 @@ def main():
     # First pass: Raw predictions for normal test set
     #############################
     avg_meters = {'iou': AverageMeter(), 'dice': AverageMeter()}
+    per_patient_metrics_raw = {}
+
     with torch.no_grad():
         counter = 0
         pbar = tqdm(total=len(test_loader), desc="Raw predictions (Normal)")
         raw_predictions = []
-        for input, target in test_loader:
+        for (input, target, pids) in test_loader:
             input = input.cuda()
             target = target.cuda()
             output = model(input)
@@ -385,6 +387,18 @@ def main():
             dice = dice_coef2(output, target)
             avg_meters['iou'].update(iou, input.size(0))
             avg_meters['dice'].update(dice, input.size(0))
+
+            for i in range(input.size(0)):
+                pid = pids[i]
+                slice_iou = iou_score(output[i].unsqueeze(0), target[i].unsqueeze(0))
+                slice_dice = dice_coef2(output[i].unsqueeze(0), target[i].unsqueeze(0))
+
+                if pid not in per_patient_metrics_raw:
+                    per_patient_metrics_raw[pid] = {"dice_vals": [], "iou_vals": []}
+
+                per_patient_metrics_raw[pid]["dice_vals"].append(slice_dice.item())
+                per_patient_metrics_raw[pid]["iou_vals"].append(slice_iou.item())
+
             output = torch.sigmoid(output)
             output = (output > 0.5).float().cpu().numpy()
             output = np.squeeze(output, axis=1)
@@ -427,14 +441,22 @@ def main():
     save_metrics_to_csv(metrics, METRICS_DIR)
     print("Raw metrics (Normal) saved.")
 
+    CLEAN_NAME = 'CLEAN_'+NAME
+
+    # CLEAN_OUTPUT_MASK_DIR = '/home/LUNG_DATA/Segmentation_output/{}'.format(CLEAN_NAME)
+    # CLEAN_OUTPUT_MASK_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Segmentation/Segmentation_output/{}'.format(CLEAN_NAME)
+    CLEAN_OUTPUT_MASK_DIR = os.path.join(os.getcwd(), 'model_outputs', folder, 'Segmentation_output', CLEAN_NAME)
+    CLEAN_GRAD_CAM_DIR = os.path.join(os.getcwd(), 'model_outputs', folder, 'Grad_CAM_output', CLEAN_NAME)
+
     #############################
     # New Block: Raw predictions for clean test set (without FPR)
     #############################
     avg_meters_clean = {'iou': AverageMeter(), 'dice': AverageMeter()}
+    per_patient_metrics_clean = {}
     with torch.no_grad():
         counter = 0
         pbar = tqdm(total=len(clean_test_loader), desc="Raw predictions (Clean)")
-        for input, target in clean_test_loader:
+        for (input, target, pids) in clean_test_loader:
             input = input.cuda()
             target = target.cuda()
             output = model(input)
@@ -442,19 +464,31 @@ def main():
             dice = dice_coef2(output, target)
             avg_meters_clean['iou'].update(iou, input.size(0))
             avg_meters_clean['dice'].update(dice, input.size(0))
+
+            for i in range(input.size(0)):
+                pid = pids[i]
+                slice_iou = iou_score(output[i].unsqueeze(0), target[i].unsqueeze(0))
+                slice_dice = dice_coef2(output[i].unsqueeze(0), target[i].unsqueeze(0))
+
+                if pid not in per_patient_metrics_clean:
+                    per_patient_metrics_clean[pid] = {"dice_vals": [], "iou_vals": []}
+
+                per_patient_metrics_clean[pid]["dice_vals"].append(slice_dice.item())
+                per_patient_metrics_clean[pid]["iou_vals"].append(slice_iou.item())
+
             output = torch.sigmoid(output)
             output = (output > 0.5).float().cpu().numpy()
             output = np.squeeze(output, axis=1)
             for i in range(output.shape[0]):
-                save_output(output[i:i+1], os.path.join(base_dir, 'model_outputs', folder, 'Segmentation_output', 'CLEAN_' + NAME), clean_test_image_paths, counter)
-                save_grad_cam(output[i:i+1], os.path.join(base_dir, 'model_outputs', folder, 'Grad_CAM_output', 'CLEAN_' + NAME), clean_test_image_paths, counter, grad_cam)
+                save_output(output[i:i+1], CLEAN_OUTPUT_MASK_DIR, clean_test_image_paths, counter)
+                save_grad_cam(output[i:i+1], CLEAN_GRAD_CAM_DIR, clean_test_image_paths, counter, grad_cam)
                 counter += 1
             pbar.update(1)
         pbar.close()
     print("=" * 50)
     print('Raw IoU (Clean): {:.4f}'.format(avg_meters_clean['iou'].avg))
     print('Raw DICE (Clean): {:.4f}'.format(avg_meters_clean['dice'].avg))
-    clean_confusion_matrix = calculate_fp_clean_dataset(os.path.join(base_dir, 'model_outputs', folder, 'Segmentation_output', 'CLEAN_' + NAME))
+    clean_confusion_matrix = calculate_fp_clean_dataset(os.path.join(base_dir, 'model_outputs', folder, 'Segmentation_output', CLEAN_OUTPUT_MASK_DIR))
     tp_clean, tn_clean, fp_clean, fn_clean = clean_confusion_matrix
     precision_clean = calculate_precision(tp_clean, fp_clean)
     recall_clean = calculate_recall(tp_clean, fn_clean)
@@ -482,14 +516,46 @@ def main():
     save_metrics_to_csv(metrics_clean, METRICS_DIR, filename="metrics_clean.csv")
     print("Raw metrics (Clean) saved.")
 
+    rows = []
+
+    # Store raw patients
+    for pid, dct in per_patient_metrics_raw.items():
+        mean_dice = float(np.mean(dct["dice_vals"]))
+        mean_iou = float(np.mean(dct["iou_vals"]))
+        rows.append({
+            "patient_id": pid,
+            "dataset_type": "raw",  # NEW COLUMN
+            "dice_mean": mean_dice,
+            "iou_mean": mean_iou
+        })
+
+    # Store clean patients
+    for pid, dct in per_patient_metrics_clean.items():
+        mean_dice = float(np.mean(dct["dice_vals"]))
+        mean_iou = float(np.mean(dct["iou_vals"]))
+        rows.append({
+            "patient_id": pid,
+            "dataset_type": "clean",  # NEW COLUMN
+            "dice_mean": mean_dice,
+            "iou_mean": mean_iou
+        })
+
+    # Save final CSV
+    df_per_patient = pd.DataFrame(rows)
+    per_patient_csv = os.path.join(METRICS_DIR, "per_patient_metrics.csv")
+    df_per_patient.to_csv(per_patient_csv, index=False)
+    print(f"Saved per-patient slice metrics to {per_patient_csv}")
+
+
     #############################
     # Second pass: FPR post-processing on normal test set
     #############################
     avg_meters_fpr = {'iou': AverageMeter(), 'dice': AverageMeter()}
+    per_patient_metrics_fpr = {}
     with torch.no_grad():
         counter = 0
         pbar = tqdm(total=len(test_loader), desc="FPR post-processing (Normal)")
-        for input, target in test_loader:
+        for input, target, pids in test_loader:
             input = input.cuda()
             target = target.cuda()
             output = model(input)
@@ -498,14 +564,27 @@ def main():
             output = np.squeeze(output, axis=1)
             batch_fpr = []
             for j in range(output.shape[0]):
+                pid = pids[j]  # Get the patient ID for this slice
                 identifier = test_image_paths[counter][-23:]
                 clinical_feats = clinical_dict.get(identifier, [0, 0, 0, 0, 0])
                 fpr_mask = apply_fpr_classifier(output[j], clinical_feats, classifier,
                                                 distance_threshold=args['distance_threshold'])
                 batch_fpr.append(fpr_mask)
-                save_output(fpr_mask[np.newaxis, :, :], FPR_OUTPUT_MASK_DIR, test_image_paths, counter)
-                save_grad_cam(fpr_mask[np.newaxis, :, :], FPR_GRAD_CAM_DIR, test_image_paths, counter, grad_cam)
+                save_output(fpr_mask[np.newaxis, :, :], OUTPUT_MASK_DIR, test_image_paths, counter)
+                save_grad_cam(fpr_mask[np.newaxis, :, :], GRAD_CAM_DIR, test_image_paths, counter, grad_cam)
+
+                # Compute per-slice metrics for FPR output
+                slice_iou_fpr = iou_score(torch.tensor(fpr_mask).unsqueeze(0).unsqueeze(0), target[j].unsqueeze(0).unsqueeze(0))
+                slice_dice_fpr = dice_coef2(torch.tensor(fpr_mask).unsqueeze(0).unsqueeze(0), target[j].unsqueeze(0).unsqueeze(0))
+                
+                # Store in per_patient_metrics_fpr dictionary
+                if pid not in per_patient_metrics_fpr:
+                    per_patient_metrics_fpr[pid] = {"dice_vals": [], "iou_vals": []}
+                per_patient_metrics_fpr[pid]["dice_vals"].append(slice_dice_fpr.item())
+                per_patient_metrics_fpr[pid]["iou_vals"].append(slice_iou_fpr.item())
+
                 counter += 1
+
             batch_fpr = np.array(batch_fpr)
             iou_fpr = iou_score(torch.tensor(batch_fpr).unsqueeze(1), target)
             dice_fpr = dice_coef2(torch.tensor(batch_fpr).unsqueeze(1), target)
@@ -517,7 +596,7 @@ def main():
     print("=" * 50)
     print('FPR IoU (Normal): {:.4f}'.format(avg_meters_fpr['iou'].avg))
     print('FPR DICE (Normal): {:.4f}'.format(avg_meters_fpr['dice'].avg))
-    confusion_matrix_fpr = calculate_fp(FPR_OUTPUT_MASK_DIR, MASK_DIR, distance_threshold=args['distance_threshold'])
+    confusion_matrix_fpr = calculate_fp(OUTPUT_MASK_DIR, MASK_DIR, distance_threshold=args['distance_threshold'])
     tp_fpr, tn_fpr, fp_fpr, fn_fpr = confusion_matrix_fpr
     precision_fpr = calculate_precision(tp_fpr, fp_fpr)
     recall_fpr = calculate_recall(tp_fpr, fn_fpr)
@@ -544,14 +623,15 @@ def main():
     save_metrics_to_csv(metrics_fpr, METRICS_DIR, filename="metrics_fpr.csv")
     print("FPR metrics (Normal) saved.")
 
-    #############################
+        #############################
     # Third pass: FPR post-processing on clean test set
     #############################
     avg_meters_fpr_clean = {'iou': AverageMeter(), 'dice': AverageMeter()}
+    per_patient_metrics_fpr_clean = {}  # Initialize a separate dictionary for clean FPR metrics
     with torch.no_grad():
         counter = 0
         pbar = tqdm(total=len(clean_test_loader), desc="FPR post-processing (Clean)")
-        for input, target in clean_test_loader:
+        for input, target, pids in clean_test_loader:
             input = input.cuda()
             target = target.cuda()
             output = model(input)
@@ -560,31 +640,42 @@ def main():
             output = np.squeeze(output, axis=1)
             batch_fpr = []
             for j in range(output.shape[0]):
+                pid = pids[j]  # Extract patient ID for this slice
                 identifier = clean_test_image_paths[counter][-23:]
                 clinical_feats = clean_clinical_dict.get(identifier, [0, 0, 0, 0, 0])
                 fpr_mask = apply_fpr_classifier(output[j], clinical_feats, classifier,
                                                 distance_threshold=args['distance_threshold'])
                 batch_fpr.append(fpr_mask)
-                clean_fpr_output_dir = os.path.join(base_dir, 'model_outputs', folder, 'Segmentation_output', 'CLEAN_' + NAME + '_fpr')
-                clean_fpr_gradcam_dir = os.path.join(base_dir, 'model_outputs', folder, 'Grad_CAM_output', 'CLEAN_' + NAME + '_fpr')
-                os.makedirs(clean_fpr_output_dir, exist_ok=True)
-                os.makedirs(clean_fpr_gradcam_dir, exist_ok=True)
-                save_output(fpr_mask[np.newaxis, :, :], clean_fpr_output_dir, clean_test_image_paths, counter)
-                save_grad_cam(fpr_mask[np.newaxis, :, :], clean_fpr_gradcam_dir, clean_test_image_paths, counter, grad_cam)
+                save_output(fpr_mask[np.newaxis, :, :], CLEAN_OUTPUT_MASK_DIR, clean_test_image_paths, counter)
+                save_grad_cam(fpr_mask[np.newaxis, :, :], CLEAN_GRAD_CAM_DIR, clean_test_image_paths, counter, grad_cam)
+                
+                # Compute per-slice metrics for clean FPR
+                slice_iou_fpr = iou_score(torch.tensor(fpr_mask).unsqueeze(0).unsqueeze(0),
+                                           target[j].unsqueeze(0).unsqueeze(0))
+                slice_dice_fpr = dice_coef2(torch.tensor(fpr_mask).unsqueeze(0).unsqueeze(0),
+                                             target[j].unsqueeze(0).unsqueeze(0))
+                
+                if pid not in per_patient_metrics_fpr_clean:
+                    per_patient_metrics_fpr_clean[pid] = {"dice_vals": [], "iou_vals": []}
+                per_patient_metrics_fpr_clean[pid]["dice_vals"].append(slice_dice_fpr.item())
+                per_patient_metrics_fpr_clean[pid]["iou_vals"].append(slice_iou_fpr.item())
+                
                 counter += 1
             batch_fpr = np.array(batch_fpr)
             iou_fpr = iou_score(torch.tensor(batch_fpr).unsqueeze(1), target)
             dice_fpr = dice_coef2(torch.tensor(batch_fpr).unsqueeze(1), target)
             avg_meters_fpr_clean['iou'].update(iou_fpr, input.size(0))
             avg_meters_fpr_clean['dice'].update(dice_fpr, input.size(0))
-            pbar.set_postfix({'iou': avg_meters_fpr_clean['iou'].avg, 'dice': avg_meters_fpr_clean['dice'].avg})
+            pbar.set_postfix({'iou': avg_meters_fpr_clean['iou'].avg,
+                               'dice': avg_meters_fpr_clean['dice'].avg})
             pbar.update(1)
         pbar.close()
     print("=" * 50)
     print('FPR IoU (Clean): {:.4f}'.format(avg_meters_fpr_clean['iou'].avg))
     print('FPR DICE (Clean): {:.4f}'.format(avg_meters_fpr_clean['dice'].avg))
+
     clean_confusion_matrix_fpr = calculate_fp_clean_dataset(
-        os.path.join(base_dir, 'model_outputs', folder, 'Segmentation_output', 'CLEAN_' + NAME + '_fpr')
+        os.path.join(base_dir, 'model_outputs', folder, 'Segmentation_output', CLEAN_OUTPUT_MASK_DIR)
     )
     tp_clean_fpr, tn_clean_fpr, fp_clean_fpr, fn_clean_fpr = clean_confusion_matrix_fpr
     precision_clean_fpr = calculate_precision(tp_clean_fpr, fp_clean_fpr)
@@ -613,7 +704,35 @@ def main():
     save_metrics_to_csv(metrics_fpr_clean, METRICS_DIR, filename="metrics_fpr_clean.csv")
     print("FPR metrics (Clean) saved.")
 
-    torch.cuda.empty_cache()
+    rows_fpr = []
+
+    # Merge raw FPR metrics
+    for pid, dct in per_patient_metrics_fpr.items():
+        mean_dice = float(np.mean(dct["dice_vals"]))
+        mean_iou = float(np.mean(dct["iou_vals"]))
+        rows_fpr.append({
+            "patient_id": pid,
+            "dataset_type": "raw_fpr",
+            "dice_mean": mean_dice,
+            "iou_mean": mean_iou
+        })
+
+    # Merge clean FPR metrics
+    for pid, dct in per_patient_metrics_fpr_clean.items():
+        mean_dice = float(np.mean(dct["dice_vals"]))
+        mean_iou = float(np.mean(dct["iou_vals"]))
+        rows_fpr.append({
+            "patient_id": pid,
+            "dataset_type": "clean_fpr",
+            "dice_mean": mean_dice,
+            "iou_mean": mean_iou
+        })
+
+    df_per_patient_fpr = pd.DataFrame(rows_fpr)
+    per_patient_fpr_csv = os.path.join(METRICS_DIR, "per_patient_metrics_fpr.csv")
+    df_per_patient_fpr.to_csv(per_patient_fpr_csv, index=False)
+    print(f"Saved merged per-patient FPR metrics to {per_patient_fpr_csv}")
+
 
 if __name__ == '__main__':
     main()
