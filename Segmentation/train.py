@@ -10,8 +10,8 @@ import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.optim as optim
-from torch.optim import lr_scheduler
-from torch.optim.lr_scheduler import StepLR #Added this
+# from torch.optim import lr_scheduler
+# from torch.optim.lr_scheduler import StepLR #Added this
 from datetime import datetime
 import uuid
 import torch.distributed as dist
@@ -68,11 +68,11 @@ def parse_args():
                         help='loss: ' +
                         ' | '.join(['Adam', 'SGD']) +
                         ' (default: Adam)')
-    parser.add_argument('--lr', '--learning_rate', default=1e-4, type=float, 
+    parser.add_argument('--lr', '--learning_rate', default=5e-4, type=float, 
                         metavar='LR', help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, #Not needed, sticking with Adam, screw SGD
                         help='momentum')
-    parser.add_argument('--weight_decay', default=1e-4, type=float,
+    parser.add_argument('--weight_decay', default=5e-4, type=float,
                         help='weight decay')
     parser.add_argument('--nesterov', default=False, type=str2bool,
                         help='nesterov')
@@ -175,11 +175,11 @@ def save_checkpoint(state, filename):
     if dist.get_rank() == 0:
         torch.save(state, filename)
 
-def load_checkpoint(filename, model, optimizer, scheduler):
+def load_checkpoint(filename, model, optimizer):
     checkpoint = torch.load(filename)
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     return checkpoint['epoch'], checkpoint['best_dice']
 
 def setup_ddp():
@@ -292,7 +292,7 @@ def main():
         raise NotImplementedError
 
     # ADD LEARNING RATE SCHEDULER HERE
-    scheduler = StepLR(optimizer, step_size=40, gamma=0.8)  # Reducing LR by 10% every 50 epochs
+    # scheduler = StepLR(optimizer, step_size=40, gamma=0.8)  # Reducing LR by 10% every 50 epochs
 
     # Directory of Image, Mask folder generated from the preprocessing stage ###
     # Write your own directory                                                 #
@@ -316,7 +316,7 @@ def main():
     dist.barrier()
     if os.path.exists(checkpoint_filename):
         print(f"=> Loading checkpoint from {checkpoint_filename}")
-        start_epoch, best_dice = load_checkpoint(checkpoint_filename, model, optimizer, scheduler)
+        start_epoch, best_dice = load_checkpoint(checkpoint_filename, model, optimizer)
         log = pd.read_csv(log_filename)  # Load existing log if checkpoint exists
     else:
         start_epoch = 0
@@ -498,7 +498,7 @@ def main():
             'epoch': epoch + 1,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict(),
+            # 'scheduler_state_dict': scheduler.state_dict(),
             'best_dice': best_dice
         }, checkpoint_filename)
 
@@ -508,7 +508,7 @@ def main():
                 print("=> Early stopping triggered")
             break
 
-        scheduler.step()
+        # scheduler.step()
 
         torch.cuda.empty_cache()
     

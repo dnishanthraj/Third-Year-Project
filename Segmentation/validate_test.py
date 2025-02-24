@@ -411,9 +411,16 @@ def main():
             pbar.set_postfix({'iou': avg_meters['iou'].avg, 'dice': avg_meters['dice'].avg})
         pbar.close()
     print("=" * 50)
-    print('Raw IoU (Normal): {:.4f}'.format(avg_meters['iou'].avg))
-    print('Raw DICE (Normal): {:.4f}'.format(avg_meters['dice'].avg))
     
+    # Compute unweighted (patient-level) averages for the raw test set
+    raw_patient_dice = [np.mean(dct["dice_vals"]) for dct in per_patient_metrics_raw.values()]
+    raw_patient_iou  = [np.mean(dct["iou_vals"])  for dct in per_patient_metrics_raw.values()]
+    unweighted_dice_raw = np.mean(raw_patient_dice)
+    unweighted_iou_raw  = np.mean(raw_patient_iou)
+
+    print('Unweighted Raw DICE (Normal): {:.4f}'.format(unweighted_dice_raw))
+    print('Unweighted Raw IoU (Normal): {:.4f}'.format(unweighted_iou_raw))
+        
     confusion_matrix = calculate_fp(OUTPUT_MASK_DIR, MASK_DIR, distance_threshold=args['distance_threshold'])
     tp, tn, fp, fn = confusion_matrix
     precision = calculate_precision(tp, fp)
@@ -423,8 +430,8 @@ def main():
     specificity = calculate_specificity(tn, fp)
     f1_score = calculate_f1_score(precision, recall)
     metrics = OrderedDict([
-        ("Dice", avg_meters['dice'].avg),
-        ("IoU", avg_meters['iou'].avg),
+        ("Dice", unweighted_dice_raw),
+        ("IoU", unweighted_iou_raw),
         ("Total Slices", len(test_image_paths)),
         ("Total Patients", total_patients),
         ("True Positive (TP)", tp),
@@ -486,8 +493,16 @@ def main():
             pbar.update(1)
         pbar.close()
     print("=" * 50)
-    print('Raw IoU (Clean): {:.4f}'.format(avg_meters_clean['iou'].avg))
-    print('Raw DICE (Clean): {:.4f}'.format(avg_meters_clean['dice'].avg))
+    
+    # Compute unweighted (patient-level) averages for the clean test set
+    clean_patient_dice = [np.mean(dct["dice_vals"]) for dct in per_patient_metrics_clean.values()]
+    clean_patient_iou  = [np.mean(dct["iou_vals"])  for dct in per_patient_metrics_clean.values()]
+    unweighted_dice_clean = np.mean(clean_patient_dice)
+    unweighted_iou_clean  = np.mean(clean_patient_iou)
+
+    print('Unweighted Clean DICE: {:.4f}'.format(unweighted_dice_clean))
+    print('Unweighted Clean IoU: {:.4f}'.format(unweighted_iou_clean))
+
     clean_confusion_matrix = calculate_fp_clean_dataset(os.path.join(base_dir, 'model_outputs', folder, 'Segmentation_output', CLEAN_OUTPUT_MASK_DIR))
     tp_clean, tn_clean, fp_clean, fn_clean = clean_confusion_matrix
     precision_clean = calculate_precision(tp_clean, fp_clean)
@@ -498,8 +513,8 @@ def main():
     f1_score_clean = calculate_f1_score(precision_clean, recall_clean)
     
     metrics_clean = OrderedDict([
-        ("Dice", avg_meters_clean['dice'].avg),
-        ("IoU", avg_meters_clean['iou'].avg),
+        ("Dice", unweighted_dice_clean),
+        ("IoU", unweighted_iou_clean),
         ("Total Slices", len(clean_test_image_paths)),
         ("Total Patients", clean_total_patients),
         ("True Positive (TP)", tp_clean),
@@ -594,8 +609,16 @@ def main():
             pbar.update(1)
         pbar.close()
     print("=" * 50)
-    print('FPR IoU (Normal): {:.4f}'.format(avg_meters_fpr['iou'].avg))
-    print('FPR DICE (Normal): {:.4f}'.format(avg_meters_fpr['dice'].avg))
+    
+    # --- Compute Unweighted (Patient-Level) Averages for FPR (Normal) ---
+    fpr_patient_dice = [np.mean(dct["dice_vals"]) for dct in per_patient_metrics_fpr.values()]
+    fpr_patient_iou  = [np.mean(dct["iou_vals"]) for dct in per_patient_metrics_fpr.values()]
+    unweighted_dice_fpr = np.mean(fpr_patient_dice)
+    unweighted_iou_fpr  = np.mean(fpr_patient_iou)
+
+    print('Unweighted FPR DICE (Normal): {:.4f}'.format(unweighted_dice_fpr))
+    print('Unweighted FPR IoU (Normal): {:.4f}'.format(unweighted_iou_fpr))
+
     confusion_matrix_fpr = calculate_fp(OUTPUT_MASK_DIR, MASK_DIR, distance_threshold=args['distance_threshold'])
     tp_fpr, tn_fpr, fp_fpr, fn_fpr = confusion_matrix_fpr
     precision_fpr = calculate_precision(tp_fpr, fp_fpr)
@@ -605,8 +628,8 @@ def main():
     specificity_fpr = calculate_specificity(tn_fpr, fp_fpr)
     f1_score_fpr = calculate_f1_score(precision_fpr, recall_fpr)
     metrics_fpr = OrderedDict([
-        ("Dice", avg_meters_fpr['dice'].avg),
-        ("IoU", avg_meters_fpr['iou'].avg),
+        ("Dice", unweighted_dice_fpr),
+        ("IoU", unweighted_iou_fpr),
         ("Total Slices", len(test_image_paths)),
         ("Total Patients", total_patients),
         ("True Positive (TP)", tp_fpr),
@@ -671,8 +694,15 @@ def main():
             pbar.update(1)
         pbar.close()
     print("=" * 50)
-    print('FPR IoU (Clean): {:.4f}'.format(avg_meters_fpr_clean['iou'].avg))
-    print('FPR DICE (Clean): {:.4f}'.format(avg_meters_fpr_clean['dice'].avg))
+    
+    # --- Compute Unweighted (Patient-Level) Averages for FPR (Clean) ---
+    fpr_clean_patient_dice = [np.mean(dct["dice_vals"]) for dct in per_patient_metrics_fpr_clean.values()]
+    fpr_clean_patient_iou  = [np.mean(dct["iou_vals"]) for dct in per_patient_metrics_fpr_clean.values()]
+    unweighted_dice_fpr_clean = np.mean(fpr_clean_patient_dice)
+    unweighted_iou_fpr_clean  = np.mean(fpr_clean_patient_iou)
+
+    print('Unweighted FPR Clean DICE: {:.4f}'.format(unweighted_dice_fpr_clean))
+    print('Unweighted FPR Clean IoU: {:.4f}'.format(unweighted_iou_fpr_clean))
 
     clean_confusion_matrix_fpr = calculate_fp_clean_dataset(
         os.path.join(base_dir, 'model_outputs', folder, 'Segmentation_output', CLEAN_OUTPUT_MASK_DIR)
@@ -686,8 +716,8 @@ def main():
     f1_score_clean_fpr = calculate_f1_score(precision_clean_fpr, recall_clean_fpr)
     
     metrics_fpr_clean = OrderedDict([
-        ("Dice", avg_meters_fpr_clean['dice'].avg),
-        ("IoU", avg_meters_fpr_clean['iou'].avg),
+        ("Dice", unweighted_dice_fpr_clean),
+        ("IoU", unweighted_iou_fpr_clean),
         ("Total Slices", len(clean_test_image_paths)),
         ("Total Patients", clean_total_patients),
         ("True Positive (TP)", tp_clean_fpr),
