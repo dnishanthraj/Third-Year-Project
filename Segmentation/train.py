@@ -54,11 +54,11 @@ def parse_args():
     # model
     parser.add_argument('--name', default="UNET",
                         help='model name: UNET',choices=['UNET', 'NestedUNET'])
-    parser.add_argument('--epochs', default=100, type=int, metavar='N',
+    parser.add_argument('--epochs', default=70, type=int, metavar='N',
                         help='number of total epochs to run')
     parser.add_argument('-b', '--batch_size', default=8, type=int, #Changed default to 4 from 12
                         metavar='N', help='mini-batch size (default: 6)')
-    parser.add_argument('--early_stopping', default=20, type=int,
+    parser.add_argument('--early_stopping', default=15, type=int,
                         metavar='N', help='early stopping (default: 50)')
     parser.add_argument('--num_workers', default=12, type=int)
 
@@ -68,11 +68,11 @@ def parse_args():
                         help='loss: ' +
                         ' | '.join(['Adam', 'SGD']) +
                         ' (default: Adam)')
-    parser.add_argument('--lr', '--learning_rate', default=5e-4, type=float, 
+    parser.add_argument('--lr', '--learning_rate', default=1e-4, type=float, 
                         metavar='LR', help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, #Not needed, sticking with Adam, screw SGD
                         help='momentum')
-    parser.add_argument('--weight_decay', default=5e-4, type=float,
+    parser.add_argument('--weight_decay', default=0.0001, type=float,
                         help='weight decay')
     parser.add_argument('--nesterov', default=False, type=str2bool,
                         help='nesterov')

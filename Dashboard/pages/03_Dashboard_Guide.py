@@ -4,6 +4,40 @@ import os
 # Configure the page
 st.set_page_config(page_title="Dashboard Guide", layout="wide")
 
+st.markdown("""
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+    /* Force Poppins on every element */
+    [data-testid="stAppViewContainer"] *, [data-testid="stSidebar"] * {
+        font-family: 'Poppins', sans-serif !important;
+    }
+    .block-container {
+        max-width: 1400px !important;  /* or 1600px, adjust to taste */
+        padding: 3rem 2rem !important; /* Adjust as needed for your taste */
+    }
+                /* Increase vertical spacing between nav items */
+    /* (Optional) If you want to reduce vertical margin inside sidebar expanders: */
+    [data-testid="stSidebar"] .streamlit-expanderHeader {
+        margin: 0.2rem 0 !important;
+    }        
+    # [data-testid="stSidebarNav"] ul {
+    #     margin-top: 0.5rem; /* space above the list */
+    # }
+    [data-testid="stSidebarNav"] ul li {
+        margin-bottom: 0.2rem; /* space between items */
+    }
+    /* Add some padding around each link */
+    [data-testid="stSidebarNav"] ul li a {
+        padding: 0.3rem 1rem; 
+        border-radius: 4px;
+    }
+            /* Increase spacing before h2 headings in the sidebar */
+    [data-testid="stSidebar"] h2 {
+        margin-bottom: 1rem !important;
+    }      
+    </style>
+    """, unsafe_allow_html=True)
+
 st.title("Dashboard Guide")
 st.markdown("---")
 st.markdown("""
@@ -42,7 +76,7 @@ This helps radiologists by automatically marking potential areas of concern, str
     overview_img = os.path.join(os.path.dirname(__file__), "..", "figures", "model_segmentation.png")
     if os.path.exists(overview_img):
         st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-        st.image(overview_img, caption="Model and Segmentation Overview", use_column_width=False, width=600)
+        st.image(overview_img, caption="Model and Segmentation Overview", use_column_width=True, width=600)
         st.markdown("</div>", unsafe_allow_html=True)
 
 with st.expander("Training and Validation Curves & Epochs"):
@@ -57,7 +91,7 @@ A well-trained model will show both curves improving and then leveling off. If t
     curve_img = os.path.join(os.path.dirname(__file__), "..", "figures", "curve.png")
     if os.path.exists(curve_img):
         st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-        st.image(curve_img, caption="Training vs. Validation Curves", use_column_width=False, width=600)
+        st.image(curve_img, caption="Training vs. Validation Curves", use_column_width=True, width=600)
         st.markdown("</div>", unsafe_allow_html=True)
 
 with st.expander("Dice Score"):
@@ -72,7 +106,7 @@ For lung nodule segmentation, a Dice Score above 0.7 is generally considered goo
     dice_img = os.path.join(os.path.dirname(__file__), "..", "figures", "dice.png")
     if os.path.exists(dice_img):
         st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-        st.image(dice_img, caption="Dice Score Illustration", use_column_width=False, width=600)
+        st.image(dice_img, caption="Dice Score Illustration", use_column_width=True, width=600)
         st.markdown("</div>", unsafe_allow_html=True)
 
 with st.expander("Intersection over Union (IoU)"):
@@ -89,7 +123,7 @@ A high IoU means the model is accurately capturing the nodule without too many f
     iou_img = os.path.join(os.path.dirname(__file__), "..", "figures", "iou.png")
     if os.path.exists(iou_img):
         st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-        st.image(iou_img, caption="IoU Illustration", use_column_width=False, width=600)
+        st.image(iou_img, caption="IoU Illustration", use_column_width=True, width=600)
         st.markdown("</div>", unsafe_allow_html=True)
 
 with st.expander("Confusion Matrix & Performance Metrics"):
@@ -120,7 +154,7 @@ From these, we calculate several performance metrics:
     cm_img = os.path.join(os.path.dirname(__file__), "..", "figures", "confusion_matrix.png")
     if os.path.exists(cm_img):
         st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-        st.image(cm_img, caption="Confusion Matrix Example", use_column_width=False, width=600)
+        st.image(cm_img, caption="Confusion Matrix Example", use_column_width=True, width=600)
         st.markdown("</div>", unsafe_allow_html=True)
 
 with st.expander("Grad-CAM (Model Explainability)"):
@@ -136,7 +170,7 @@ This visualization helps radiologists understand and verify what the model is fo
     grad_cam_img = os.path.join(os.path.dirname(__file__), "..", "figures", "grad_cam.png")
     if os.path.exists(grad_cam_img):
         st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-        st.image(grad_cam_img, caption="Grad-CAM Heatmap", use_column_width=False, width=600)
+        st.image(grad_cam_img, caption="Grad-CAM Heatmap", use_column_width=True, width=600)
         st.markdown("</div>", unsafe_allow_html=True)
 
 with st.expander("False Positive Reduction (FPR) and Clean Set"):
@@ -153,7 +187,7 @@ By combining these, the dashboard ensures that only the most reliable detections
     fpr_img = os.path.join(os.path.dirname(__file__), "..", "figures", "fpr_clean_set.png")
     if os.path.exists(fpr_img):
         st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-        st.image(fpr_img, caption="FPR and Clean Set Illustration", use_column_width=False, width=600)
+        st.image(fpr_img, caption="FPR and Clean Set Illustration", use_column_width=True, width=600)
         st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("---")

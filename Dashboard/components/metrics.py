@@ -276,3 +276,45 @@ def run_statistical_tests(metric_name, data_dict):
             "posthoc": posthoc_df  # can be None if not significant
         }
         return result
+    
+def display_zoom_and_annotate(base_image, zoom_factor=1.0, file_name="exported_image"):
+    """
+    Allows the user to toggle between Zoom Mode and Annotate Mode on the same image.
+    In Zoom Mode the user can pan and zoom, and in Annotate Mode they can draw on the image.
+    """
+    # Normalize and convert the base image to uint8 if necessary
+    base_image_min = base_image.min()
+    base_image_max = base_image.max() if base_image.max() != base_image_min else (base_image_min + 1)
+    base_image_normalized = (base_image - base_image_min) / (base_image_max - base_image_min)
+    base_image_uint8 = (base_image_normalized * 255).astype(np.uint8)
+
+    # Let the user choose the mode:
+    mode = st.radio("Select Mode:", ["Zoom Mode", "Annotate Mode"], key="view_mode_toggle")
+    
+    if mode == "Zoom Mode":
+        st.markdown("**Zoom Mode:** You can pan and zoom the image below.")
+        try:
+            image_zoom(base_image_uint8, mode="dragmove", size=750, zoom_factor=zoom_factor)
+        except Exception as e:
+            st.error(f"Error in zoom functionality: {e}")
+    else:
+        st.markdown("**Annotate Mode:** Draw on the image below.")
+        # Use st_canvas for annotation
+        canvas_result = st_canvas(
+            fill_color="rgba(0, 0, 0, 0)",  # transparent fill
+            stroke_width=3,
+            stroke_color="#FF0000",
+            background_image=Image.fromarray(base_image_uint8),
+            update_streamlit=True,
+            height=base_image_uint8.shape[0],
+            width=base_image_uint8.shape[1],
+            drawing_mode="freedraw",
+            display_toolbar=True,
+            key="annotation_canvas_toggle"
+        )
+        # Show the annotated image if available
+        if canvas_result.image_data is not None:
+            st.image(canvas_result.image_data, caption="Annotated Image", use_column_width=True)
+    
+    # (Optional) You could also add an export step here if needed:
+    # export_file(..., file_name)

@@ -11,6 +11,42 @@ from components import (
 )
 
 st.set_page_config(page_title="Overall Results", layout="wide")
+
+st.markdown("""
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+    /* Force Poppins on every element */
+    [data-testid="stAppViewContainer"] *, [data-testid="stSidebar"] * {
+        font-family: 'Poppins', sans-serif !important;
+    }
+    .block-container {
+        max-width: 1400px !important;  /* or 1600px, adjust to taste */
+        padding: 3rem 2rem !important; /* Adjust as needed for your taste */
+    }
+                /* Increase vertical spacing between nav items */
+    /* (Optional) If you want to reduce vertical margin inside sidebar expanders: */
+    [data-testid="stSidebar"] .streamlit-expanderHeader {
+        margin: 0.1rem 0 !important;
+    }        
+    # [data-testid="stSidebarNav"] ul {
+    #     margin-top: 0.5rem; /* space above the list */
+    # }
+    [data-testid="stSidebarNav"] ul li {
+        margin-bottom: 0.2rem; /* space between items */
+    }
+    /* Add some padding around each link */
+    [data-testid="stSidebarNav"] ul li a {
+        padding: 0.3rem 1rem; 
+        border-radius: 4px;
+    }
+            /* Increase spacing before h2 headings in the sidebar */
+    [data-testid="stSidebar"] h2 {
+        margin-bottom: 1rem !important;
+    }      
+    </style>
+    """, unsafe_allow_html=True)
+
+
 # ---------------------------------------------------
 # PATH SETUP
 # ---------------------------------------------------
@@ -28,113 +64,91 @@ available_folders = [
     if os.path.isdir(os.path.join(MODEL_OUTPUTS_DIR, f))
 ]
 
-# ---------------------------------------------------
-# SIDEBAR: SELECT FOLDERS FOR COMPARISON
-# ---------------------------------------------------
-st.sidebar.markdown("### Select Folders to Compare")
-st.sidebar.markdown("Pick one or more folders.")
-
-selected_folders = st.sidebar.multiselect(
-    "Folders",  # Label required but will be hidden
-    available_folders,
-    default=[available_folders[0]] if available_folders else [],
-    label_visibility="collapsed"  # Hides the label without adding extra spacing
-)
-
-
-# Error handling if no folder is selected
-if not selected_folders:
-    st.sidebar.warning("Please select at least one folder to continue.")
-    st.stop()
-
+# (Then, if you want a separate heading for your settings)
+st.sidebar.markdown("## Sidebar Settings")
 
 # ---------------------------------------------------
-# SIDEBAR: RENAME FOLDERS (NEW)
+# SIDEBAR: FOLDER SETTINGS
 # ---------------------------------------------------
-with st.sidebar.expander("Rename Folders", expanded=False):
-    st.markdown("Provide custom labels for each folder:")
+with st.sidebar.expander("Folder Settings", expanded=False):
+    st.markdown("Pick one or more folders, then optionally rename them.")
+    
+    # 1) SELECT FOLDERS
+    st.markdown("#### Select Folders to Compare")
+    st.markdown("Pick one or more folders:")
+    selected_folders = st.multiselect(
+        "Folders",
+        available_folders,
+        default=[available_folders[0]] if available_folders else [],
+        label_visibility="collapsed"  # Hide the label
+    )
+    if not selected_folders:
+        st.warning("Please select at least one folder to continue.")
+        st.stop()
 
+    # 2) RENAME FOLDERS
+    st.markdown("#### Rename Folders")
     if selected_folders:
-        # Dropdown to select which folder to rename
         selected_folder_for_rename = st.selectbox(
             "Select a folder to rename", 
             selected_folders, 
             key="rename_folder_select"
         )
-
-        # Text input for renaming the selected folder
         new_label = st.text_input(
             f"New label for '{selected_folder_for_rename}':",
             value=selected_folder_for_rename,
             key=f"rename_{selected_folder_for_rename}"
         )
-
-        # ?? IMPORTANT: Store the renamed label as "NewLabel (OriginalFolder)"
-        # so it's consistent anywhere you use folder_labels:
         if 'folder_labels' not in st.session_state:
             st.session_state['folder_labels'] = {}
-        st.session_state['folder_labels'][selected_folder_for_rename] = f"{new_label} ({selected_folder_for_rename})"
-
+        st.session_state['folder_labels'][selected_folder_for_rename] = (
+            f"{new_label} ({selected_folder_for_rename})"
+        )
     else:
         st.warning("No folders available for renaming.")
-
 folder_labels = st.session_state.get('folder_labels', {})
 
-# ---------------------------------------------------
-# SIDEBAR: CREATE GROUPS
-# ---------------------------------------------------
-st.sidebar.markdown("### Create Groups")
-st.sidebar.markdown("""
-Use groups to color-code multiple folders.  
-You can also leave folders ungrouped (select **No Group** later).
-""")
 
-# 1) Put "No Group" settings in its own expander
-groups_dict = {}
-with st.sidebar.expander("No Group Settings", expanded=False):
+# ---------------------------------------------------
+# SIDEBAR: GROUP SETTINGS
+# ---------------------------------------------------
+with st.sidebar.expander("Group Settings", expanded=False):
+    st.markdown("Create groups, then assign each folder to a group for color-coding.")
+
+    # 1) Group Creation: No Group and Additional Groups
+    st.markdown("#### Group Creation")
+    groups_dict = {}
+    # No Group Settings (default group)
     no_group_name = st.text_input("Name for No Group", value="No Group", key="no_group_name")
     no_group_color = st.color_picker("Color for No Group", "#999999", key="color_no_group")
+    groups_dict[no_group_name] = no_group_color
 
-# Store the users chosen name/color in our dictionary
-groups_dict[no_group_name] = no_group_color
-
-num_groups = st.sidebar.number_input(
-    "Number of Additional Groups",
-    min_value=0,
-    value=0,
-    step=1,
-    help="Enter how many named groups you want to define (excluding the default 'No Group')."
-)
-
-
-for i in range(num_groups):
-    exp_label = f"Group {i+1} Settings"
-    with st.sidebar.expander(exp_label, expanded=False):
-        group_name = st.text_input(f"Name for {exp_label}", value=f"Group{i+1}", key=f"group_name_{i}")
+    # Additional Groups (displayed inline, no nested expanders)
+    st.markdown("#### Additional Groups")
+    num_groups = st.number_input(
+        "Number of Additional Groups",
+        min_value=0,
+        value=0,
+        step=1,
+        help="Enter how many named groups you want to define (excluding the default 'No Group')."
+    )
+    for i in range(num_groups):
+        group_name = st.text_input(f"Name for Group {i+1}", value=f"Group{i+1}", key=f"group_name_{i}")
         default_color = "#008000"
-        group_color = st.color_picker(f"Color for {group_name}", default_color, key=f"group_color_{i}")
+        group_color = st.color_picker(f"Color for Group {i+1}", default_color, key=f"group_color_{i}")
         groups_dict[group_name] = group_color
 
-# ---------------------------------------------------
-# SIDEBAR: ASSIGN FOLDERS TO GROUPS (COLLAPSED)
-# ---------------------------------------------------
-with st.sidebar.expander("Assign Folders to Groups", expanded=False):
-    st.markdown(f"""
-    Here, choose which group each folder belongs to.  
-    By default, a folder can stay under **{no_group_name}** if you don't wish to group it.
-    """)
-    
+    # 2) Folder Assignment: Assign each selected folder to a group
+    st.markdown("#### Assign Folders to Groups")
     folder_to_group = {}
     for folder in selected_folders:
-        # Ensure we only show the final renamed format
-        display_name = folder_labels.get(folder, folder)  # This already includes "(OriginalFolder)" if renamed
+        display_name = folder_labels.get(folder, folder)
         assigned_group = st.selectbox(
-            f"Group for folder: {display_name}",  # No redundant formatting
-            list(groups_dict.keys()),  # Includes 'No Group' and custom groups
+            f"Group for folder: {display_name}",
+            list(groups_dict.keys()),
             key=f"group_select_{folder}"
         )
         folder_to_group[folder] = assigned_group
-
 
 
 # ---------------------------------------------------
@@ -145,37 +159,37 @@ colors_for_folders = {
     for folder in selected_folders
 }
 
-# ---------------------------------------------------
-# EXTRA SIDEBAR: PER-FOLDER METRIC SETTINGS (Single Folder)
-# ---------------------------------------------------
-st.sidebar.markdown("### Choose Group Results")
-st.sidebar.markdown("""Toggle between Clean/Without Clean and Raw/FPR Results for each group.""")
+# # ---------------------------------------------------
+# # EXTRA SIDEBAR: PER-FOLDER METRIC SETTINGS (Single Folder)
+# # ---------------------------------------------------
+# st.sidebar.markdown("### Choose Group Results")
+# st.sidebar.markdown("""Toggle between Clean/Without Clean and Raw/FPR Results for each group.""")
 
-with st.sidebar.expander("Per-Folder Metric Settings", expanded=False):
-    st.markdown("Select a folder to configure its metric settings:")
+# with st.sidebar.expander("Per-Folder Metric Settings", expanded=False):
+#     st.markdown("Select a folder to configure its metric settings:")
 
-    folder_options = {folder_labels.get(folder, folder): folder for folder in selected_folders}
-    selected_folder_label = st.selectbox("Folder", list(folder_options.keys()))
-    selected_folder = folder_options[selected_folder_label]
+#     folder_options = {folder_labels.get(folder, folder): folder for folder in selected_folders}
+#     selected_folder_label = st.selectbox("Folder", list(folder_options.keys()))
+#     selected_folder = folder_options[selected_folder_label]
 
-    st.markdown(f"**Configure settings for: {selected_folder_label}**")
+#     st.markdown(f"**Configure settings for: {selected_folder_label}**")
 
-    metric_source = st.radio(
-        "Segmentation Source",
-        ["Raw", "FPR"],
-        key=f"metrics_source_{selected_folder}"
-    )
-    clean_option = st.radio(
-        "Include Clean Set",
-        ["No Clean", "Clean"],
-        key=f"display_clean_{selected_folder}"
-    )
+#     metric_source = st.radio(
+#         "Segmentation Source",
+#         ["Raw", "FPR"],
+#         key=f"metrics_source_{selected_folder}"
+#     )
+#     clean_option = st.radio(
+#         "Include Clean Set",
+#         ["No Clean", "Clean"],
+#         key=f"display_clean_{selected_folder}"
+#     )
 
-    # Save to session_state so all folders can have their own config
-    st.session_state["folder_settings"][selected_folder] = {
-        "metrics_source": metric_source,
-        "display_clean": clean_option
-    }
+#     # Save to session_state so all folders can have their own config
+#     st.session_state["folder_settings"][selected_folder] = {
+#         "metrics_source": metric_source,
+#         "display_clean": clean_option
+#     }
 
 
 
@@ -255,7 +269,7 @@ def process_folder(folder, display_clean, metrics_source):
         metrics_data_clean = pd.read_csv(metrics_clean_file_path)
         log_data = load_log_data(log_file_path)
     except FileNotFoundError:
-        st.warning(f"Metrics or log file not found for '{folder}'.")
+        # st.warning(f"Metrics or log file not found for '{folder}'.")
         return None, None
 
     no_clean_dict = metrics_data_no_clean.set_index("Metric").to_dict()["Result"]
@@ -361,7 +375,7 @@ for folder in selected_folders:
         logs_data[folder] = pd.DataFrame()
         st.warning(f"Log file not found for '{folder}'.")
 
-st.subheader("1) Training & Validation Curves")
+st.subheader("Training & Validation Curves")
 st.markdown("""
 Compare how each folder learned over epochs. 
 The same group color is applied to each folder in that group.  
@@ -453,11 +467,11 @@ for folder in selected_folders:
 
 
 # ---------------------------------------------------
-# 3) TEST RESULTS SCATTER CHART
+# 3) TEST RESULTS BAR CHART (REPLACING SCATTER)
 # ---------------------------------------------------
-st.subheader("2) Test Results Graph")
+st.subheader("Test Results Graph")
 st.markdown("""
-Choose which metric to compare across all folders. Each point represents one folder, colored by the group.
+Choose which metric to compare across all folders. Each bar represents one folder, colored by the group.
 """)
 
 final_metrics_list = []
@@ -471,31 +485,33 @@ if final_metrics_list:
     candidate_metrics = [m for m in candidate_metrics if m in final_metrics_df.index]
 
     if candidate_metrics:
-        chosen_metric = st.selectbox("Select a Metric for Scatter", candidate_metrics)
+        chosen_metric = st.selectbox("Select a Metric for Bar Chart", candidate_metrics)
         if chosen_metric in final_metrics_df.index:
             selected_metric_series = final_metrics_df.loc[chosen_metric]
         else:
             st.warning(f"No data for metric '{chosen_metric}'.")
             selected_metric_series = pd.Series(dtype=float)
 
-        scatter_data = []
+        # Prepare DataFrame for the bar chart
+        bar_data = []
         for folder_name in selected_metric_series.index:
             val = selected_metric_series[folder_name]
-            scatter_data.append({
-                "Folder": folder_labels.get(folder_name, folder_name),  # Use the custom label here
+            bar_data.append({
+                "Folder": folder_labels.get(folder_name, folder_name),  # Use any custom folder label
                 "Value": val,
                 "Group": folder_to_group[folder_name],
             })
-        scatter_df = pd.DataFrame(scatter_data)
+        bar_df = pd.DataFrame(bar_data)
 
-        unique_groups = scatter_df["Group"].unique().tolist()
+        # Build a bar chart instead of a scatter chart
+        unique_groups = bar_df["Group"].unique().tolist()
         group_color_map = {g: groups_dict[g] for g in unique_groups if g in groups_dict}
 
-        scatter_chart = (
-            alt.Chart(scatter_df)
-            .mark_circle(size=150)
+        bar_chart = (
+            alt.Chart(bar_df)
+            .mark_bar()
             .encode(
-                x=alt.X("Folder:N", axis=alt.Axis(labels=False, ticks=False)),
+                x=alt.X("Folder:N", sort=None, title="Folder"),
                 y=alt.Y("Value:Q", title=chosen_metric),
                 color=alt.Color(
                     "Group:N",
@@ -511,39 +527,80 @@ if final_metrics_list:
                 title=f"{chosen_metric} Across Folders"
             )
         )
-        st.altair_chart(scatter_chart, use_container_width=True)
+        st.altair_chart(bar_chart, use_container_width=True)
+
+        # Identify the highest & lowest scoring folders
+        if not bar_df.empty:
+            # Sort by 'Value'
+            sorted_df = bar_df.sort_values(by="Value", ascending=False)
+            highest = sorted_df.iloc[0]
+            lowest = sorted_df.iloc[-1]
+
+            st.markdown("**Insights:**")
+            st.write(f"- **Highest** {chosen_metric}: {highest['Folder']} ({highest['Value']:.4f})")
+            st.write(f"- **Lowest** {chosen_metric}: {lowest['Folder']} ({lowest['Value']:.4f})")
+            gap = highest["Value"] - lowest["Value"]
+            st.write(f"The performance gap between highest and lowest is **{gap:.4f}**, "
+                     "suggesting how much variation there is among selected folders.")
     else:
-        st.warning("No suitable metrics found for the scatter chart.")
+        st.warning("No suitable metrics found for the bar chart.")
 else:
-    st.write("No folders have any metrics to display in the scatter chart.")
+    st.write("No folders have any metrics to display in this section.")
+
 
 # ---------------------------------------------------
 # 4) PER-FOLDER METRICS + CONFUSION MATRIX
 # ---------------------------------------------------
 
-st.subheader("3) Folder Metrics & Confusion Matrix")
+st.subheader("Folder Metrics & Confusion Matrix")
 st.markdown("""
-Choose a folder from the dropdown below to see that folder's confusion matrix and other metrics.  
-We'll show only one folder at a time.
+Choose a folder from the dropdown below to see that folder's confusion matrix and other metrics.
 """)
 
 if selected_folders:
-    label_to_folder = {
-        folder_labels.get(folder, folder): folder
-        for folder in selected_folders
-    }
+    label_to_folder = { folder_labels.get(folder, folder): folder for folder in selected_folders }
     chosen_label = st.selectbox("Select a folder to view metrics", list(label_to_folder.keys()))
     chosen_folder = label_to_folder[chosen_label]
-    # Wrap folder metrics in an expander
+
+    # --- New: Integrate toggle options here ---
+    st.markdown("#### Choose Segmentation Source & Dataset Type")
+    # Set default values if not yet in session_state
+    if f"metrics_source_{chosen_folder}" not in st.session_state:
+         st.session_state[f"metrics_source_{chosen_folder}"] = "Raw"
+    if f"display_clean_{chosen_folder}" not in st.session_state:
+         st.session_state[f"display_clean_{chosen_folder}"] = "No Clean"
+
+    metric_source = st.radio(
+         "Segmentation Source",
+         ["Raw", "FPR"],
+         index=["Raw", "FPR"].index(st.session_state[f"metrics_source_{chosen_folder}"]),
+         key=f"metrics_source_{chosen_folder}"
+    )
+    clean_option = st.radio(
+         "Include Clean Set",
+         ["No Clean", "Clean"],
+         index=["No Clean", "Clean"].index(st.session_state[f"display_clean_{chosen_folder}"]),
+         key=f"display_clean_{chosen_folder}"
+    )
+
+    # Save the latest settings to session_state
+    st.session_state["folder_settings"][chosen_folder] = {
+         "metrics_source": metric_source,
+         "display_clean": clean_option
+    }
+    # --- End new toggle integration ---
+
+    # Recompute metrics for the chosen folder using the current toggles
+    folder_data, _ = process_folder(chosen_folder, display_clean=clean_option, metrics_source=metric_source)
+
     with st.expander(f"View Metrics for: {chosen_folder}", expanded=True):
-        folder_df = comparison_data_dict[chosen_folder]
-        if folder_df.empty:
+        if folder_data is None or folder_data.empty:
             st.write("No metrics found for this folder.")
         else:
             # --- Confusion Matrix ---
             def safe_val(metric_name):
-                if metric_name in folder_df.index and chosen_folder in folder_df.columns:
-                    return folder_df.loc[metric_name, chosen_folder]
+                if metric_name in folder_data.index and chosen_folder in folder_data.columns:
+                    return folder_data.loc[metric_name, chosen_folder]
                 else:
                     return 0
 
@@ -579,15 +636,12 @@ if selected_folders:
             st.table(df_cm.style.apply(style_cm, axis=None))
 
             # --- Other Metrics Table ---
-            confusion_metrics = {
-                "True Positive (TP)", "True Negative (TN)",
-                "False Positive (FP)", "False Negative (FN)"
-            }
+            confusion_metrics = {"True Positive (TP)", "True Negative (TN)", "False Positive (FP)", "False Negative (FN)"}
             rows_other = []
-            for metric in folder_df.index:
+            for metric in folder_data.index:
                 if metric in confusion_metrics:
                     continue
-                score = folder_df.loc[metric, chosen_folder]
+                score = folder_data.loc[metric, chosen_folder]
                 bg, desc = get_color_and_description_overall(metric, score)
                 rows_other.append({
                     "Metric": metric,
@@ -597,20 +651,13 @@ if selected_folders:
 
             if rows_other:
                 df_other = pd.DataFrame(rows_other)
-
                 def apply_colors(row):
                     c, _ = get_color_and_description_overall(row["Metric"], row["Result"])
                     return [c if col == "Result" else "" for col in row.index]
-
                 st.write("**Other Metrics:**")
-                st.table(
-                    df_other.style
-                           .format({"Result": "{:.4f}"})
-                           .apply(apply_colors, axis=1)
-                )
+                st.table(df_other.style.format({"Result": "{:.4f}"}).apply(apply_colors, axis=1))
             else:
                 st.write("No additional metrics to display.")
-
 
 st.markdown("---")
 st.markdown(f"""

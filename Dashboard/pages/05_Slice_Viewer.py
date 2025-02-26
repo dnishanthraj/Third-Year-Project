@@ -3,11 +3,45 @@ import os
 import numpy as np
 from components import (
     find_file_in_subfolder, load_npy, display_overlay, display_zoomable_image_with_annotation,
-    display_scores_table, parse_filenames, sort_patients, find_file_in_dir
+    display_scores_table, parse_filenames, sort_patients, find_file_in_dir, display_nodule_classification_overlay
 )
 from components.constants import IMAGE_DIR, MASK_DIR, OUTPUT_MASK_DIR, GRAD_CAM_DIR
 
 st.set_page_config(page_title="Slice Viewer", layout="wide")
+
+st.markdown("""
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+    /* Force Poppins on every element */
+    [data-testid="stAppViewContainer"] *, [data-testid="stSidebar"] * {
+        font-family: 'Poppins', sans-serif !important;
+    }
+    .block-container {
+        max-width: 1400px !important;  /* or 1600px, adjust to taste */
+        padding: 3rem 2rem !important; /* Adjust as needed for your taste */
+    }
+                /* Increase vertical spacing between nav items */
+    /* (Optional) If you want to reduce vertical margin inside sidebar expanders: */
+    [data-testid="stSidebar"] .streamlit-expanderHeader {
+        margin: 0.2rem 0 !important;
+    }        
+    # [data-testid="stSidebarNav"] ul {
+    #     margin-top: 0.5rem; /* space above the list */
+    # }
+    [data-testid="stSidebarNav"] ul li {
+        margin-bottom: 0.2rem; /* space between items */
+    }
+    /* Add some padding around each link */
+    [data-testid="stSidebarNav"] ul li a {
+        padding: 0.3rem 1rem; 
+        border-radius: 4px;
+    }
+            /* Increase spacing before h2 headings in the sidebar */
+    [data-testid="stSidebar"] h2 {
+        margin-bottom: 1rem !important;
+    }      
+    </style>
+    """, unsafe_allow_html=True)
 
 ################################################################################
 # 0) PAGE TITLE & INTRO
@@ -32,6 +66,9 @@ of slice-level metrics (Dice, IoU, etc.) for that slice's predicted vs. ground-t
 ################################################################################
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 MODEL_OUTPUTS_DIR = os.path.join(ROOT_DIR, "Project", "Segmentation", "model_outputs")
+
+# (Then, if you want a separate heading for your settings)
+st.sidebar.markdown("## Sidebar Settings")
 
 ################################################################################
 # 2) SIDEBAR: MODEL FOLDER SELECTION
@@ -136,7 +173,7 @@ with st.sidebar.expander("Explore Slices", expanded=False):
     )
     selected_slice = st.selectbox("Select Slice", sorted_slices, format_func=lambda x: x[1])
 
-    overlay_type = st.radio("Select Overlay", ["None", "Grad-CAM Heatmap", "Ground Truth Mask", "Predicted Mask"])
+    overlay_type = st.radio("Select Overlay", ["None", "Grad-CAM Heatmap", "Ground Truth Mask", "Predicted Mask", "Nodule Classification"])
     zoom_factor = st.slider("Zoom Factor", 1.0, 10.0, 2.0, 0.1)
 
 ################################################################################
@@ -145,7 +182,7 @@ with st.sidebar.expander("Explore Slices", expanded=False):
 col_left, col_right = st.columns([2,1], gap="large")
 
 slice_index = selected_slice[1].split()[-1]
-col_left.header("1) View Zoomable Overlay")
+col_left.header("View Zoomable Overlay")
 col_left.markdown("""
 Below is the final merged slice (or the original slice if no overlay was chosen).
 You can zoom in/out here.
@@ -162,12 +199,44 @@ elif overlay_type == "Ground Truth Mask":
 elif overlay_type == "Predicted Mask":
     overlay_code = prefix
 
+
 with col_left:
-    if overlay_type != "None":
-        # Use the overlay-based display
+    if overlay_type == "Nodule Classification":
+        # Call the new function to display annotated nodule classifications
+        display_nodule_classification_overlay(selected_patient, selected_region, slice_index, zoom_factor)
+    elif overlay_type != "None":
+        # Existing overlay display for Grad-CAM, Ground Truth, or Predicted Mask
+        overlay_code = None
+        if overlay_type == "Grad-CAM Heatmap":
+            st.markdown("""
+            **Grad-CAM Heatmap Overlay**  
+            This overlay highlights **which areas of the slice** the model found most important for its segmentation decision.
+            Warmer (red/yellow) areas mean higher importance, cooler (blue) areas mean lower importance.
+            """)
+            overlay_code = "GC"
+            
+        elif overlay_type == "Ground Truth Mask":
+            st.markdown("""
+            **Ground Truth Mask Overlay**  
+            This overlay shows the **ground truth segmentation** from the dataset.
+            It indicates the actual region(s) of interest (e.g., nodules) that the model should detect.
+            """)
+            overlay_code = "MA"
+        elif overlay_type == "Predicted Mask":
+            st.markdown("""
+            **Predicted Mask Overlay**  
+            This overlay shows the **models predicted segmentation** in color over the original slice.
+            Compare it to the Ground Truth Mask to see how accurate the models predictions are.
+            """)
+            overlay_code = prefix
         display_overlay(selected_patient, selected_region, slice_index, overlay_code, zoom_factor)
     else:
-        # Show original slice with annotation
+        # Show the original slice with annotation canvas
+        st.markdown("""
+        **No Overlay Selected**  
+        Youre viewing the **original CT slice** with no additional overlay.
+        Use the annotation tools in the sidebar if you want to draw or label anything on this raw slice.
+        """)
         file_name = f"{selected_patient}_NI{selected_region}_slice{slice_index}.npy"
         original_path = find_file_in_subfolder(IMAGE_DIR, int(selected_patient), file_name)
         original_image = load_npy(original_path) if original_path else None
@@ -179,7 +248,7 @@ with col_left:
 # SECTION 2: Display the slice-level metrics in right column
 with col_right:
     # --- (Optional) mention "2) Metrics" if you handle them here, or just omit ---
-    st.markdown("## 2) Slice-Level Metrics")
+    st.markdown("## Slice-Level Metrics")
     st.markdown("""
     Typically, metrics (e.g. Dice, IoU) are computed outside this file. 
     If you want to display any slice-level metrics here, you can add them 

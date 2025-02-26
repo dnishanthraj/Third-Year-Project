@@ -9,6 +9,132 @@ from .file_utils import find_file_in_subfolder, export_file
 from .image_utils import load_npy, combine_images
 from .constants import MASK_DIR, GRAD_CAM_DIR, OUTPUT_MASK_DIR, IMAGE_DIR
 
+import numpy as np
+from PIL import Image, ImageDraw
+from skimage.measure import label, regionprops
+import os
+import streamlit as st
+from .file_utils import find_file_in_subfolder, export_file
+from .image_utils import load_npy, combine_images
+from .constants import MASK_DIR, GRAD_CAM_DIR, OUTPUT_MASK_DIR, IMAGE_DIR
+
+def annotate_nodules(base_image, pred_mask, gt_mask, distance_threshold=80):
+    """
+    Annotates the base image with bounding boxes and labels for each predicted nodule.
+    A predicted region is labeled as TP if its center is within the threshold
+    distance of any ground truth region's center; otherwise, FP.
+    Additionally, any ground truth region that has no nearby predicted candidate is labeled FN.
+    Returns the annotated image as a numpy array.
+    """
+    # Ensure base image is in RGB
+    if len(base_image.shape) == 2:
+        base_rgb = np.stack([base_image] * 3, axis=-1)
+    else:
+        base_rgb = base_image.copy()
+    
+    # Convert to uint8 if necessary
+    if base_rgb.dtype != np.uint8:
+        base_rgb = ((base_rgb - base_rgb.min()) / (base_rgb.max() - base_rgb.min()) * 255).astype(np.uint8)
+    
+    annotated_img = Image.fromarray(base_rgb)
+    draw = ImageDraw.Draw(annotated_img)
+
+    # Label predicted mask and extract regions
+    pred_labeled = label(pred_mask)
+    pred_regions = regionprops(pred_labeled)
+
+    # Label ground truth mask and get centroids
+    gt_labeled = label(gt_mask)
+    gt_regions = regionprops(gt_labeled)
+    gt_centroids = [region.centroid for region in gt_regions]
+
+    # For each predicted region, classify as TP or FP based on distance
+    for region in pred_regions:
+        bbox = region.bbox  # (min_row, min_col, max_row, max_col)
+        pred_centroid = region.centroid
+        is_tp = False
+        for gt_centroid in gt_centroids:
+            dist = np.linalg.norm(np.array(pred_centroid) - np.array(gt_centroid))
+            if dist < distance_threshold:
+                is_tp = True
+                break
+        label_text = "TP" if is_tp else "FP"
+        color = (0, 255, 0) if is_tp else (255, 0, 0)  # green for TP, red for FP
+        draw.rectangle([bbox[1], bbox[0], bbox[3], bbox[2]], outline=color, width=2)
+        draw.text((bbox[1], max(bbox[0]-10, 0)), label_text, fill=color)
+
+    # For each ground truth region, if no predicted candidate is nearby, mark it FN.
+    for region in gt_regions:
+        bbox = region.bbox
+        gt_centroid = region.centroid
+        matched = False
+        for region_pred in pred_regions:
+            pred_centroid = region_pred.centroid
+            dist = np.linalg.norm(np.array(pred_centroid) - np.array(gt_centroid))
+            if dist < distance_threshold:
+                matched = True
+                break
+        if not matched:
+            label_text = "FN"
+            color = (0, 0, 255)  # blue for FN
+            draw.rectangle([bbox[1], bbox[0], bbox[3], bbox[2]], outline=color, width=2)
+            draw.text((bbox[1], max(bbox[0]-10, 0)), label_text, fill=color)
+    
+    return np.array(annotated_img)
+
+
+def display_nodule_classification_overlay(patient_id, region_id, slice_name, zoom_factor, distance_threshold=80):
+    """
+    Loads the original image, predicted mask, and ground truth mask for the given slice,
+    annotates detected nodules as TP/FP/FN, and displays the resulting image in the
+    zoomable and annotatable viewer.
+    """
+
+    # 1) Show a quick explanation/legend for the user
+    st.markdown("""
+    **Nodule Classification Legend**  
+    - <span style="color:green;font-weight:bold;">Green Box (TP)</span>: Model correctly predicted a real nodule  
+    - <span style="color:red;font-weight:bold;">Red Box (FP)</span>: Model predicted a nodule that does **not** exist  
+    - <span style="color:blue;font-weight:bold;">Blue Box (FN)</span>: A real nodule was **missed** by the model  
+
+    *(Note: True Negatives do not appear because there is no box to draw where neither ground truth nor prediction has a nodule.)*
+    """, unsafe_allow_html=True)
+
+    # 2) Build file names (adjust prefix if needed)
+    original_file_name = f"{patient_id}_NI{region_id}_slice{slice_name}.npy"
+    predicted_file_name = f"{patient_id}_PD{region_id}_slice{slice_name}.npy"  # assumed predicted prefix "PD"
+    ground_truth_file_name = f"{patient_id}_MA{region_id}_slice{slice_name}.npy"
+
+    # 3) Load images
+    original_path = find_file_in_subfolder(IMAGE_DIR, int(patient_id), original_file_name)
+    base_image = load_npy(original_path)
+    if base_image is None:
+        st.warning("Original image not found.")
+        return
+
+    predicted_path = os.path.join(OUTPUT_MASK_DIR, predicted_file_name)
+    ground_truth_path = find_file_in_subfolder(MASK_DIR, int(patient_id), ground_truth_file_name)
+
+    pred_mask = load_npy(predicted_path) if predicted_path and os.path.exists(predicted_path) else None
+    gt_mask = load_npy(ground_truth_path) if ground_truth_path and os.path.exists(ground_truth_path) else None
+
+    if pred_mask is None or gt_mask is None:
+        st.warning("Predicted or Ground Truth mask not found.")
+        return
+
+    # 4) Annotate nodules on the original image
+    annotated_image = annotate_nodules(base_image, pred_mask, gt_mask, distance_threshold)
+
+    # 5) Display the annotated image in the zoomable viewer
+    display_zoomable_image_with_annotation(
+        base_image=annotated_image,
+        overlay=None,
+        overlay_type="Nodule Classification",
+        zoom_factor=zoom_factor,
+        file_name=f"{patient_id}_region{region_id}_slice{slice_name}_nodule_classification"
+    )
+
+
 def display_overlay(patient_id, region_id, slice_name, overlay_type, zoom_factor):
     """
     Display an overlay (Grad-CAM, Ground Truth Mask, or Predicted Mask) on the Original Image.
@@ -18,13 +144,13 @@ def display_overlay(patient_id, region_id, slice_name, overlay_type, zoom_factor
       3) Merges them and calls display_zoomable_image_with_annotation
     """
 
-    # --- SECTION 1) VIEW OVERLAY ---
-    st.markdown("## 1) View Overlay")
-    st.markdown("""
-    Here, we load the **original slice** from disk, then combine it with the 
-    chosen overlay (Grad-CAM, Ground Truth Mask, or Predicted Mask).  
-    This gives a quick visual comparison to see how the overlay aligns with the slice.
-    """)
+    # # --- SECTION 1) VIEW OVERLAY ---
+    # st.markdown("## 1) View Overlay")
+    # st.markdown("""
+    # Here, we load the **original slice** from disk, then combine it with the 
+    # chosen overlay (Grad-CAM, Ground Truth Mask, or Predicted Mask).  
+    # This gives a quick visual comparison to see how the overlay aligns with the slice.
+    # """)
 
     original_file_name = f"{patient_id}_NI{region_id}_slice{slice_name}.npy"
     overlay_file_name = f"{patient_id}_{overlay_type}{region_id}_slice{slice_name}.npy"
@@ -95,7 +221,7 @@ def display_zoomable_image_with_annotation(base_image,
         realtime_update = st.checkbox("Realtime Update", True)
 
     # --- SECTION 3) EXPORT & ANNOTATE ---
-    st.markdown("## 3) Export & Annotate")
+    st.markdown("## Export & Annotate")
     st.markdown("""
     Use the annotation canvas to draw lines, boxes, polygons, etc.  
     Once you're done, you can export the annotated result as both `.npy` and `.png`.
