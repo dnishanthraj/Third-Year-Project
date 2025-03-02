@@ -374,6 +374,8 @@ def main():
     #############################
     avg_meters = {'iou': AverageMeter(), 'dice': AverageMeter()}
     per_patient_metrics_raw = {}
+    dice_list = []
+    iou_list = []
 
     with torch.no_grad():
         counter = 0
@@ -392,6 +394,8 @@ def main():
                 pid = pids[i]
                 slice_iou = iou_score(output[i].unsqueeze(0), target[i].unsqueeze(0))
                 slice_dice = dice_coef2(output[i].unsqueeze(0), target[i].unsqueeze(0))
+                dice_list.append(slice_dice)
+                iou_list.append(slice_iou)
 
                 if pid not in per_patient_metrics_raw:
                     per_patient_metrics_raw[pid] = {"dice_vals": [], "iou_vals": []}
@@ -422,9 +426,14 @@ def main():
     accuracy = calculate_accuracy(tp, tn, fp, fn)
     specificity = calculate_specificity(tn, fp)
     f1_score = calculate_f1_score(precision, recall)
+    dice_std = np.std(dice_list)
+    iou_std = np.std(iou_list)
+
     metrics = OrderedDict([
         ("Dice", avg_meters['dice'].avg),
+        ("Dice_std", dice_std),
         ("IoU", avg_meters['iou'].avg),
+         ("IoU_std", iou_std),
         ("Total Slices", len(test_image_paths)),
         ("Total Patients", total_patients),
         ("True Positive (TP)", tp),
@@ -453,6 +462,9 @@ def main():
     #############################
     avg_meters_clean = {'iou': AverageMeter(), 'dice': AverageMeter()}
     per_patient_metrics_clean = {}
+    dice_list = []
+    iou_list = []
+
     with torch.no_grad():
         counter = 0
         pbar = tqdm(total=len(clean_test_loader), desc="Raw predictions (Clean)")
@@ -469,6 +481,8 @@ def main():
                 pid = pids[i]
                 slice_iou = iou_score(output[i].unsqueeze(0), target[i].unsqueeze(0))
                 slice_dice = dice_coef2(output[i].unsqueeze(0), target[i].unsqueeze(0))
+                dice_list.append(slice_dice)
+                iou_list.append(slice_iou)
 
                 if pid not in per_patient_metrics_clean:
                     per_patient_metrics_clean[pid] = {"dice_vals": [], "iou_vals": []}

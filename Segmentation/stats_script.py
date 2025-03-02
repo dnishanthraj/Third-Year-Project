@@ -64,7 +64,9 @@ def main():
     for label, df in [(group_labels[0], df_A), (group_labels[1], df_B)]:
         dice_mean = df['dice_mean'].mean()
         iou_mean  = df['iou_mean'].mean()
-        print(f"  {label} - Dice: {dice_mean:.4f}, IoU: {iou_mean:.4f}")
+        dice_std = df['dice_mean'].std()
+        iou_std = df['iou_mean'].std()
+        print(f"  {label} - Dice: {dice_mean:.4f} (std: {dice_std:.4f}), IoU: {iou_mean:.4f} (std: {iou_std:.4f})")
     
     # Perform paired t-test for dice_mean.
     t_stat_dice, p_val_dice, merged_dice = paired_ttest(df_A, df_B, "dice_mean")
