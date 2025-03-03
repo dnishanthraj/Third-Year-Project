@@ -28,7 +28,10 @@ def combine_images(base_image, overlay=None, overlay_type=None):
         elif overlay_type == "MA":  # Ground Truth Mask (Green)
             overlay_colored = np.stack([np.zeros_like(overlay), overlay, np.zeros_like(overlay)], axis=-1)
         elif overlay_type == "PD":  # Predicted Mask (Red)
+            st.write("DEBUG: Predicted overlay unique values before color stacking:", np.unique(overlay))
             overlay_colored = np.stack([overlay, np.zeros_like(overlay), np.zeros_like(overlay)], axis=-1)
+            st.write("DEBUG: Overlay_colored unique values:", np.unique(overlay_colored))
+            # overlay_colored = np.stack([overlay, np.zeros_like(overlay), np.zeros_like(overlay)], axis=-1)
         else:
             overlay_colored = np.zeros_like(combined_image)
 
@@ -37,3 +40,4 @@ def combine_images(base_image, overlay=None, overlay_type=None):
         combined_image = np.clip(combined_image, 0, 1)
 
     return (combined_image * 255).astype(np.uint8)
+

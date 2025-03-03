@@ -1,22 +1,19 @@
 # components/visualisation.py
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 from streamlit_drawable_canvas import st_canvas
 import os
 import streamlit as st
 from streamlit_image_zoom import image_zoom
-from .file_utils import find_file_in_subfolder, export_file
-from .image_utils import load_npy, combine_images
-from .constants import MASK_DIR, GRAD_CAM_DIR, OUTPUT_MASK_DIR, IMAGE_DIR
-
-import numpy as np
-from PIL import Image, ImageDraw
+# from .constants import MASK_DIR, GRAD_CAM_DIR, OUTPUT_MASK_DIR, IMAGE_DIR
+import components.constants as const  # Import the entire module
 from skimage.measure import label, regionprops
 import os
-import streamlit as st
-from .file_utils import find_file_in_subfolder, export_file
+from .file_utils import find_file_in_subfolder, export_file, find_file_in_dir
 from .image_utils import load_npy, combine_images
-from .constants import MASK_DIR, GRAD_CAM_DIR, OUTPUT_MASK_DIR, IMAGE_DIR
+
+
+
 
 def annotate_nodules(base_image, pred_mask, gt_mask, distance_threshold=80):
     """
@@ -155,12 +152,14 @@ def display_overlay(patient_id, region_id, slice_name, overlay_type, zoom_factor
     original_file_name = f"{patient_id}_NI{region_id}_slice{slice_name}.npy"
     overlay_file_name = f"{patient_id}_{overlay_type}{region_id}_slice{slice_name}.npy"
 
-    original_path = find_file_in_subfolder(IMAGE_DIR, int(patient_id), original_file_name)
+    original_path = find_file_in_subfolder(const.IMAGE_DIR, int(patient_id), original_file_name)
     if overlay_type == "MA":  # ground truth
-        overlay_path = find_file_in_subfolder(MASK_DIR, int(patient_id), overlay_file_name)
-    else:
-        overlay_dir = GRAD_CAM_DIR if overlay_type == "GC" else OUTPUT_MASK_DIR
-        overlay_path = os.path.join(overlay_dir, overlay_file_name)
+        overlay_path = find_file_in_subfolder(const.MASK_DIR, int(patient_id), overlay_file_name)
+    elif overlay_type == "GC":  # Grad-CAM
+        overlay_path = find_file_in_dir(const.GRAD_CAM_DIR, overlay_file_name)
+    else:  # Predicted Mask (PD) case
+        overlay_path = find_file_in_dir(const.OUTPUT_MASK_DIR, overlay_file_name)
+
 
     original_image = load_npy(original_path)
     overlay_image = load_npy(overlay_path) if overlay_path and os.path.exists(overlay_path) else None
@@ -296,3 +295,44 @@ def lighten_color(hex_color, factor=0.5):
     b = int(b + (255 - b)*factor)
 
     return "#{:02x}{:02x}{:02x}".format(r, g, b)
+
+def display_zoom_and_annotate(base_image, zoom_factor=1.0, file_name="exported_image"):
+    """
+    Displays the given base image in a toggleable mode:
+    - **Zoom Mode:** The user can pan/zoom the image.
+    - **Annotate Mode:** The user can draw annotations directly on the image.
+    
+    The toggle appears in the sidebar.
+    """
+    # Ensure the image is uint8 for proper display.
+    if base_image.dtype != np.uint8:
+        base_image = ((base_image - base_image.min()) / (base_image.max() - base_image.min()) * 255).astype(np.uint8)
+    
+    # Provide a sidebar toggle for mode selection.
+    mode = st.sidebar.radio("Select View Mode:", ["Zoom", "Annotate"], key="zoom_annotate_mode")
+    
+    if mode == "Zoom":
+        st.markdown("### Zoom Mode")
+        try:
+            image_zoom(base_image, mode="dragmove", size=750, zoom_factor=zoom_factor)
+        except Exception as e:
+            st.error(f"Error in zoom functionality: {e}")
+    else:
+        st.markdown("### Annotate Mode")
+        # Ensure st_canvas is available (it is imported at the top of this file).
+        from streamlit_drawable_canvas import st_canvas
+        canvas_result = st_canvas(
+            fill_color="rgba(0, 0, 0, 0)",  # transparent background
+            stroke_width=3,
+            stroke_color="#FF0000",
+            background_image=Image.fromarray(base_image),
+            update_streamlit=True,
+            height=base_image.shape[0],
+            width=base_image.shape[1],
+            drawing_mode="freedraw",
+            display_toolbar=True,
+            key="annotation_canvas_toggle"
+        )
+        if canvas_result.image_data is not None:
+            st.image(canvas_result.image_data, caption="Annotated Image", use_column_width=True)
+

@@ -34,7 +34,7 @@ class MyLidcDataset(Dataset):
         self.albu_transformations = albu.Compose([
             # albu.ElasticTransform(alpha=1.0, alpha_affine=0.5, sigma=4, p=0.2),
             # albu.HorizontalFlip(p=0.2),
-            albu.GaussNoise(var_limit=(10.0, 50.0), p=0.2),
+            # albu.GaussNoise(var_limit=(10.0, 50.0), p=0.2),
             # albu.RandomGamma(gamma_limit=(80, 120), p=0.2), 
             # albu.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.2),
             # albu.GaussianBlur(blur_limit=(3, 5), p=0.2),

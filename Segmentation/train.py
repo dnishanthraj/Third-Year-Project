@@ -56,6 +56,9 @@ def parse_args():
                         help='model name: UNET',choices=['UNET', 'NestedUNET'])
     parser.add_argument('--epochs', default=100, type=int, metavar='N',
                         help='number of total epochs to run')
+    
+
+                        # 8 FOR 3 GPU's, 4 FOR 2 GPU's?
     parser.add_argument('-b', '--batch_size', default=8, type=int, #Changed default to 4 from 12
                         metavar='N', help='mini-batch size (default: 6)')
     parser.add_argument('--early_stopping', default=20, type=int,
@@ -68,7 +71,7 @@ def parse_args():
                         help='loss: ' +
                         ' | '.join(['Adam', 'SGD']) +
                         ' (default: Adam)')
-    parser.add_argument('--lr', '--learning_rate', default=7.5e-4, type=float, 
+    parser.add_argument('--lr', '--learning_rate', default=1e-5, type=float, 
                         metavar='LR', help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, #Not needed, sticking with Adam, screw SGD
                         help='momentum')

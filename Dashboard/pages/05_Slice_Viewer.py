@@ -2,10 +2,12 @@ import streamlit as st
 import os
 import numpy as np
 from components import (
-    find_file_in_subfolder, load_npy, display_overlay, display_zoomable_image_with_annotation,
+    find_file_in_subfolder, load_npy, display_overlay, display_zoomable_image_with_annotation, display_zoom_and_annotate,
     display_scores_table, parse_filenames, sort_patients, find_file_in_dir, display_nodule_classification_overlay
 )
-from components.constants import IMAGE_DIR, MASK_DIR, OUTPUT_MASK_DIR, GRAD_CAM_DIR
+import components.constants as const
+from components.constants import IMAGE_DIR, MASK_DIR, MODEL_OUTPUTS_BASE_DIR
+
 
 st.set_page_config(page_title="Slice Viewer", layout="wide")
 
@@ -61,14 +63,20 @@ Below, your chosen slice will be displayed, along with a small table
 of slice-level metrics (Dice, IoU, etc.) for that slice's predicted vs. ground-truth mask.
 """)
 
+st.markdown("""
+**Note:** The FP classifier has been applied to the clean dataset, so false positives have been removed.  
+As a result, only the **No Clean** (raw) dataset is displayed, which shows all predicted regions (including false positives).  
+This ensures that overlays such as Grad-CAM and nodule classification display meaningful information.
+""")
+
 ################################################################################
 # 1) PATH SETUP
 ################################################################################
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-MODEL_OUTPUTS_DIR = os.path.join(ROOT_DIR, "Project", "Segmentation", "model_outputs")
 
 # (Then, if you want a separate heading for your settings)
 st.sidebar.markdown("## Sidebar Settings")
+
 
 ################################################################################
 # 2) SIDEBAR: MODEL FOLDER SELECTION
@@ -76,8 +84,8 @@ st.sidebar.markdown("## Sidebar Settings")
 with st.sidebar.expander("Select Model Folder", expanded=True):
     st.write("Pick the model folder whose slices/Grad-CAM data you want to view.")
     available_folders = [
-        f for f in os.listdir(MODEL_OUTPUTS_DIR)
-        if os.path.isdir(os.path.join(MODEL_OUTPUTS_DIR, f))
+        f for f in os.listdir(MODEL_OUTPUTS_BASE_DIR)
+        if os.path.isdir(os.path.join(MODEL_OUTPUTS_BASE_DIR, f))
     ]
     selected_folder = st.selectbox("Model Folder:", available_folders)
 
@@ -85,51 +93,34 @@ if not selected_folder:
     st.warning("No folder selected. Please pick one from the sidebar.")
     st.stop()
 
-folder_base_path = os.path.join(MODEL_OUTPUTS_DIR, selected_folder, "Segmentation_output")
-grad_cam_base_path = os.path.join(MODEL_OUTPUTS_DIR, selected_folder, "Grad_CAM_output")
+# Build dynamic paths using the selected folder:
+folder_base_path = os.path.join(const.MODEL_OUTPUTS_BASE_DIR, selected_folder, "Segmentation_output")
+grad_cam_base_path = os.path.join(const.MODEL_OUTPUTS_BASE_DIR, selected_folder, "Grad_CAM_output")
+METRICS_DIR = os.path.join(const.MODEL_OUTPUTS_BASE_DIR, selected_folder, "metrics")  # if needed
 
-segmentation_subfolders = [
-    subfolder for subfolder in os.listdir(folder_base_path)
-    if os.path.isdir(os.path.join(folder_base_path, subfolder))
-]
-grad_cam_subfolders = [
-    subfolder for subfolder in os.listdir(grad_cam_base_path)
-    if os.path.isdir(os.path.join(grad_cam_base_path, subfolder))
-]
+# List subfolders (to distinguish Clean vs. No Clean, for example)
+segmentation_subfolders = [sub for sub in os.listdir(folder_base_path) if os.path.isdir(os.path.join(folder_base_path, sub))]
+grad_cam_subfolders = [sub for sub in os.listdir(grad_cam_base_path) if os.path.isdir(os.path.join(grad_cam_base_path, sub))]
 
-# Identify CLEAN or Non-CLEAN subfolders
-clean_segmentation_folder = next((sub for sub in segmentation_subfolders if sub.startswith("CLEAN")), None)
+# For your use-case, always use the non-clean dataset:
 non_clean_segmentation_folder = next((sub for sub in segmentation_subfolders if not sub.startswith("CLEAN")), None)
-
-clean_grad_cam_folder = next((sub for sub in grad_cam_subfolders if sub.startswith("CLEAN")), None)
 non_clean_grad_cam_folder = next((sub for sub in grad_cam_subfolders if not sub.startswith("CLEAN")), None)
 
-################################################################################
-# 3) SIDEBAR: DATASET TYPE SELECTION (NO CLEAN / CLEAN)
-################################################################################
-with st.sidebar.expander("Select Dataset Type", expanded=False):
-    st.write("Choose whether to view **No Clean** or **Clean** slices.")
-    clean_option = st.radio("Dataset Type:", ["No Clean", "Clean"])
+# Build the final dynamic paths:
+OUTPUT_MASK_DIR = os.path.join(folder_base_path, non_clean_segmentation_folder)
+GRAD_CAM_DIR = os.path.join(grad_cam_base_path, non_clean_grad_cam_folder)
+prefix = "PD"
 
-# Assign prefix + directories based on user choice
-if clean_option == "Clean" and clean_segmentation_folder and clean_grad_cam_folder:
-    OUTPUT_MASK_DIR = os.path.join(folder_base_path, clean_segmentation_folder)
-    GRAD_CAM_DIR = os.path.join(grad_cam_base_path, clean_grad_cam_folder)
-    prefix = "CN"
-elif clean_option == "No Clean" and non_clean_segmentation_folder and non_clean_grad_cam_folder:
-    OUTPUT_MASK_DIR = os.path.join(folder_base_path, non_clean_segmentation_folder)
-    GRAD_CAM_DIR = os.path.join(grad_cam_base_path, non_clean_grad_cam_folder)
-    prefix = "PD"
-else:
-    st.error("The selected dataset type does not exist for this model folder.")
-    st.stop()
+# Patch the constants module:
+const.OUTPUT_MASK_DIR = OUTPUT_MASK_DIR
+const.GRAD_CAM_DIR = GRAD_CAM_DIR
+const.METRICS_DIR = METRICS_DIR
 
 ################################################################################
 # 4) GATHER .NPY FILES
 ################################################################################
 output_mask_files = [f for f in os.listdir(OUTPUT_MASK_DIR) if f.endswith('.npy')]
 grad_cam_files = [f for f in os.listdir(GRAD_CAM_DIR) if f.endswith('.npy')]
-
 output_masks_by_patient = sort_patients(parse_filenames(output_mask_files, prefix=prefix))
 grad_cams_by_patient = sort_patients(parse_filenames(grad_cam_files, prefix="GC"))
 
@@ -172,9 +163,12 @@ with st.sidebar.expander("Explore Slices", expanded=False):
         key=lambda x: int(x[1].split()[-1])
     )
     selected_slice = st.selectbox("Select Slice", sorted_slices, format_func=lambda x: x[1])
+    
 
     overlay_type = st.radio("Select Overlay", ["None", "Grad-CAM Heatmap", "Ground Truth Mask", "Predicted Mask", "Nodule Classification"])
     zoom_factor = st.slider("Zoom Factor", 1.0, 10.0, 2.0, 0.1)
+
+    
 
 ################################################################################
 # 6) MAIN PAGE LAYOUT -> 2 COLUMNS (SLICE + ANNOTATION, METRICS)
@@ -197,7 +191,7 @@ if overlay_type == "Grad-CAM Heatmap":
 elif overlay_type == "Ground Truth Mask":
     overlay_code = "MA"
 elif overlay_type == "Predicted Mask":
-    overlay_code = prefix
+    overlay_code = "PD"
 
 
 with col_left:
@@ -225,29 +219,29 @@ with col_left:
         elif overlay_type == "Predicted Mask":
             st.markdown("""
             **Predicted Mask Overlay**  
-            This overlay shows the **models predicted segmentation** in color over the original slice.
-            Compare it to the Ground Truth Mask to see how accurate the models predictions are.
+            This overlay shows the **model's predicted segmentation** in color over the original slice.
+            Compare it to the Ground Truth Mask to see how accurate the model's predictions are.
             """)
-            overlay_code = prefix
+            overlay_code = "PD"
         display_overlay(selected_patient, selected_region, slice_index, overlay_code, zoom_factor)
     else:
         # Show the original slice with annotation canvas
         st.markdown("""
         **No Overlay Selected**  
         Youre viewing the **original CT slice** with no additional overlay.
-        Use the annotation tools in the sidebar if you want to draw or label anything on this raw slice.
+        Use the sidebar toggle to switch between **Zoom Mode** (pan/zoom) and **Annotate Mode** (draw on the image).
         """)
         file_name = f"{selected_patient}_NI{selected_region}_slice{slice_index}.npy"
         original_path = find_file_in_subfolder(IMAGE_DIR, int(selected_patient), file_name)
         original_image = load_npy(original_path) if original_path else None
         if original_image is not None:
-            display_zoomable_image_with_annotation(original_image, file_name=file_name)
+            display_zoomable_image_with_annotation(original_image, zoom_factor=zoom_factor, file_name=file_name)
         else:
             st.warning("Original slice not found for this combination.")
 
 # SECTION 2: Display the slice-level metrics in right column
+# SECTION 2: Display the slice-level metrics in right column
 with col_right:
-    # --- (Optional) mention "2) Metrics" if you handle them here, or just omit ---
     st.markdown("## Slice-Level Metrics")
     st.markdown("""
     Typically, metrics (e.g. Dice, IoU) are computed outside this file. 
@@ -255,7 +249,7 @@ with col_right:
     before or after the annotation step.
     """)
 
-    predicted_file_name = f"{selected_patient}_{prefix}{selected_region}_slice{slice_index}.npy"
+    predicted_file_name = f"{selected_patient}_PD{selected_region}_slice{slice_index}.npy"
     ground_truth_file_name = f"{selected_patient}_MA{selected_region}_slice{slice_index}.npy"
 
     predicted_path = find_file_in_dir(OUTPUT_MASK_DIR, predicted_file_name)
@@ -271,6 +265,8 @@ with col_right:
             st.warning("Failed to load the predicted or ground truth mask from file.")
     else:
         st.warning("Could not find predicted or ground truth mask file path for this slice.")
+
+
 
 # Final tips
 st.markdown("---")

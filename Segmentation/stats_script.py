@@ -10,7 +10,7 @@ import os
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
-        description="Perform paired t-test on per-patient metrics (dice_mean and iou_mean) from two CSV files."
+        description="Perform paired t-test on per-patient metrics (dice_mean and iou_mean) from two CSV files and compute Precision/Recall from metrics files."
     )
     parser.add_argument("--csv_files", nargs="+", required=True,
                         help="Paths to the CSV files containing per-patient metrics. Exactly 2 required.")
@@ -28,6 +28,49 @@ def load_data(csv_path, group_label):
     df = df[['patient_id', 'dice_mean', 'iou_mean']].copy()
     df['group'] = group_label
     return df
+
+def load_metrics(metrics_path):
+    """
+    Loads Precision, Recall, FPPS, TP, FP, FN, and Total Patients from a metrics CSV file.
+    Returns a dictionary with summed values.
+    """
+    df = pd.read_csv(metrics_path, index_col=0, header=None, names=["Metric", "Result"])
+    metrics = df.to_dict()["Result"]
+
+    # Convert extracted values to floats
+    TP = float(metrics.get("True Positive (TP)", 0.0))
+    FP = float(metrics.get("False Positive (FP)", 0.0))
+    FN = float(metrics.get("False Negative (FN)", 0.0))
+    total_patients = float(metrics.get("Total Patients", 1.0))  # Default to 1 to avoid division by zero
+
+    # Compute Precision, Recall, and FPPS safely
+    precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
+    recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
+    fpps = FP / total_patients if total_patients > 0 else 0.0  # FPPS per patient
+
+    return {"TP": TP, "FP": FP, "FN": FN, "Total Patients": total_patients, "Precision": precision, "Recall": recall, "FPPS": fpps}
+
+
+def compute_combined_metrics(metrics_files):
+    """
+    Sums TP, FP, FN, Total Patients from multiple files and calculates the overall Precision, Recall, and FPPS.
+    """
+    total_TP = total_FP = total_FN = total_patients = 0.0
+    
+    for metrics_file in metrics_files:
+        metrics = load_metrics(metrics_file)
+        total_TP += metrics["TP"]
+        total_FP += metrics["FP"]
+        total_FN += metrics["FN"]
+        total_patients += metrics["Total Patients"]
+
+    # Compute combined Precision, Recall, and FPPS safely
+    combined_precision = total_TP / (total_TP + total_FP) if (total_TP + total_FP) > 0 else 0.0
+    combined_recall = total_TP / (total_TP + total_FN) if (total_TP + total_FN) > 0 else 0.0
+    combined_fpps = total_FP / total_patients if total_patients > 0 else 0.0  # FPPS per patient
+
+    return combined_precision, combined_recall, combined_fpps
+
 
 def paired_ttest(df1, df2, metric):
     """
@@ -47,19 +90,19 @@ def main():
         print("Error: Exactly 2 CSV files are required for a paired t-test.")
         return
     
-    # Use the parent folder name plus file name to create unique labels for each group.
+    # Generate group labels
     group_labels = []
     for path in csv_files:
-        # Use the grandparent folder (model folder) plus file name.
         model_folder = os.path.basename(os.path.dirname(os.path.dirname(path)))
         file_name = os.path.basename(path).split('.')[0]
         label = f"{model_folder}_{file_name}"
         group_labels.append(label)
     
+    # Load per-patient metrics
     df_A = load_data(csv_files[0], group_labels[0])
     df_B = load_data(csv_files[1], group_labels[1])
     
-    # Print average metrics for each group.
+    # Compute per-patient means and standard deviations
     print("Average metrics per group:")
     for label, df in [(group_labels[0], df_A), (group_labels[1], df_B)]:
         dice_mean = df['dice_mean'].mean()
@@ -67,17 +110,17 @@ def main():
         dice_std = df['dice_mean'].std()
         iou_std = df['iou_mean'].std()
         print(f"  {label} - Dice: {dice_mean:.4f} (std: {dice_std:.4f}), IoU: {iou_mean:.4f} (std: {iou_std:.4f})")
-    
-    # Perform paired t-test for dice_mean.
-    t_stat_dice, p_val_dice, merged_dice = paired_ttest(df_A, df_B, "dice_mean")
+
+    # Perform paired t-test
+    t_stat_dice, p_val_dice, _ = paired_ttest(df_A, df_B, "dice_mean")
+    t_stat_iou, p_val_iou, _ = paired_ttest(df_A, df_B, "iou_mean")
+
     print("\nPaired t-test results for Dice:")
     print(f"  t-statistic = {t_stat_dice:.4f}, p-value = {p_val_dice:.6e}")
-    
-    # Perform paired t-test for iou_mean.
-    t_stat_iou, p_val_iou, merged_iou = paired_ttest(df_A, df_B, "iou_mean")
+
     print("\nPaired t-test results for IoU:")
     print(f"  t-statistic = {t_stat_iou:.4f}, p-value = {p_val_iou:.6e}")
-    
+
     if p_val_dice < 0.05:
         print("\nThe difference in Dice between the two runs is statistically significant (p < 0.05).")
     else:
@@ -87,6 +130,27 @@ def main():
         print("The difference in IoU between the two runs is statistically significant (p < 0.05).")
     else:
         print("No statistically significant difference in IoU was found (p >= 0.05).")
+
+    # Load Precision, Recall & FPPS from metric files
+    base_metric_files = [
+        csv_files[0].replace("per_patient_metrics.csv", "metrics.csv"),
+        csv_files[0].replace("per_patient_metrics.csv", "metrics_clean.csv"),
+    ]
+
+    fpr_metric_files = [
+        csv_files[1].replace("per_patient_metrics_fpr.csv", "metrics_fpr.csv"),
+        csv_files[1].replace("per_patient_metrics_fpr.csv", "metrics_fpr_clean.csv"),
+    ]
+
+    # Compute combined metrics
+    base_precision, base_recall, base_fpps = compute_combined_metrics(base_metric_files)
+    fpr_precision, fpr_recall, fpr_fpps = compute_combined_metrics(fpr_metric_files)
+
+    # Display Precision, Recall & FPPS
+    print("\nPrecision, Recall & FPPS Results:")
+    print(f"  {group_labels[0]} - Precision: {base_precision:.4f}, Recall: {base_recall:.4f}, FPPS (Per Patient): {base_fpps:.4f}")
+    print(f"  {group_labels[1]} - Precision: {fpr_precision:.4f}, Recall: {fpr_recall:.4f}, FPPS (Per Patient): {fpr_fpps:.4f}")
+
 
 if __name__ == "__main__":
     main()
