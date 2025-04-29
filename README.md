@@ -23,7 +23,7 @@ This repository contains scripts to train and validate lung nodule segmentation 
 
 ## 2. Preprocess with Jaeho’s Pipeline
 
-Jaeho’s preprocessing repository uses the `pylidc` library to extract nodule-containing slices and save them as NumPy (`.npy`) files.
+Jaeho’s [preprocessing repository](https://github.com/jaeho3690/LIDC-IDRI-Preprocessing) uses the `pylidc` library to extract nodule-containing slices and save them as NumPy (`.npy`) files.
 
 1. **Clone the preprocessing repo** (replace `<preprocessing-repo-url>` with the actual URL):
    ```bash
