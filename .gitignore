@@ -12,7 +12,7 @@
 /LIDC-IDRI Dataset/
 /Segmentation/joboutput_*.out
 /Segmentation/joboutput_*.err
-/Segmentation/*.sbatch
+# /Segmentation/*.sbatch
 /Segmentation/configuration.txt
 /Segmentation/model_outputs
 /Segmentation/figures
