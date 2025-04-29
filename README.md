@@ -79,21 +79,22 @@ Jaeho’s preprocessing repository uses the `pylidc` library to extract nodule-c
    source myenv/bin/activate             # activate your environment
 
    # Training (U-Net or U-Net++)
-   sbatch train.sbatch --name UNET --augmentation True
+   sbatch train.sbatch 
 
    # Validation
-   sbatch validate.sbatch --name UNET --augmentation True
+   sbatch validate.sbatch
    ```
 
 > **Note:** Both `train.sbatch` and `validate.sbatch` accept additional arguments:
 > - `--name` (model name: `UNET` or `NestedUNET`)
 > - `--augmentation` (`True` or `False`)
 > - `--epochs`, `--batch-size`, `--lr`, etc.
+> - Check for others!
 
 ---
 
 ## 4. Repository Structure
-
+The repository should look similar to:
 ```
 Segmentation/
 ├── train.sbatch            # SLURM script for training
