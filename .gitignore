@@ -21,3 +21,6 @@
 /Segmentation/validate1.py
 /Segmentation/testing_grad_cam.py
 /Segmentation/fp_classifier.py
+/Dashboard/__pycache__
+/Dashboard/.streamlit
+/Dashboard/components/__pycache__
