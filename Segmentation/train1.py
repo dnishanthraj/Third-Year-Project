@@ -5,13 +5,14 @@ import os
 from collections import OrderedDict
 from glob import glob
 import yaml
+import time
 
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.optim as optim
-# from torch.optim import lr_scheduler
-# from torch.optim.lr_scheduler import StepLR #Added this
+from torch.optim import lr_scheduler
+from torch.optim.lr_scheduler import StepLR #Added this
 from datetime import datetime
 import uuid
 import torch.distributed as dist
@@ -54,12 +55,12 @@ def parse_args():
     # model
     parser.add_argument('--name', default="UNET",
                         help='model name: UNET',choices=['UNET', 'NestedUNET'])
-    parser.add_argument('--epochs', default=100, type=int, metavar='N',
+    parser.add_argument('--epochs', default=70, type=int, metavar='N',
                         help='number of total epochs to run')
     
 
                         # 8 FOR 3 GPU's, 4 FOR 2 GPU's?
-    parser.add_argument('-b', '--batch_size', default=4, type=int, #Changed default to 4 from 12
+    parser.add_argument('-b', '--batch_size', default=8, type=int, #Changed default to 4 from 12
                         metavar='N', help='mini-batch size (default: 6)')
     parser.add_argument('--early_stopping', default=20, type=int,
                         metavar='N', help='early stopping (default: 50)')
@@ -71,7 +72,7 @@ def parse_args():
                         help='loss: ' +
                         ' | '.join(['Adam', 'SGD']) +
                         ' (default: Adam)')
-    parser.add_argument('--lr', '--learning_rate', default=7.5e-4, type=float, 
+    parser.add_argument('--lr', '--learning_rate', default=1e-4, type=float, 
                         metavar='LR', help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, #Not needed, sticking with Adam, screw SGD
                         help='momentum')
@@ -170,9 +171,12 @@ def validate(val_loader, model, criterion):
             pbar.update(1)
         pbar.close()
 
-    return OrderedDict([('loss', avg_meters['loss'].avg),
-                        ('iou', avg_meters['iou'].avg),
-                        ('dice',avg_meters['dice'].avg)])
+    return OrderedDict([
+    ('loss', avg_meters['loss'].avg),
+    ('iou', avg_meters['iou'].avg),
+    ('dice', avg_meters['dice'].avg)
+    ])
+
 
 def save_checkpoint(state, filename):
     if dist.get_rank() == 0:
@@ -256,12 +260,12 @@ def main():
         print('-' * 20)
 
     #criterion = nn.BCEWithLogitsLoss().cuda()
-    criterion = BCEDiceLoss().cuda()
-    # criterion = BCEDiceFocalLoss(
-    # alpha=1.0,      # typical focal parameter
-    # gamma=2.0,      # typical focal parameter
-    # focal_weight=0.5
-    # ).cuda()
+    # criterion = BCEDiceLoss().cuda()
+    criterion = BCEDiceFocalLoss(
+    alpha=1.0,      # typical focal parameter
+    gamma=2.0,      # typical focal parameter
+    focal_weight=0.5
+    ).cuda()
     # criterion = FocalLoss(alpha=1.0, gamma=2.0, reduction='mean')
     cudnn.benchmark = True  # Was False - change to True?
     # cudnn.deterministic = True
@@ -295,7 +299,7 @@ def main():
         raise NotImplementedError
 
     # ADD LEARNING RATE SCHEDULER HERE
-    # scheduler = StepLR(optimizer, step_size=40, gamma=0.8)  # Reducing LR by 10% every 50 epochs
+    scheduler = StepLR(optimizer, step_size=40, gamma=0.8)  # Reducing LR by 10% every 50 epochs
 
     # Directory of Image, Mask folder generated from the preprocessing stage ###
     # Write your own directory                                                 #
@@ -333,7 +337,7 @@ def main():
 
     
     # Set up 5-Fold Cross Validation
-    kf = KFold(n_splits=3, shuffle=True, random_state=26)
+    kf = KFold(n_splits=9, shuffle=True, random_state=26)
 
     # Create a DataFrame to store averaged results across folds
     log = pd.DataFrame(columns=['epoch', 'lr', 'loss', 'iou', 'dice', 'val_loss', 'val_iou'])
@@ -341,6 +345,8 @@ def main():
     # Initialize the metric storage
     best_dice = 0
     trigger = 0
+    torch.cuda.reset_peak_memory_stats(device)
+    epoch_start_time = time.time()
 
     for idx, epoch in enumerate(range(start_epoch, (config['epochs']))):
     # Initialize K-Fold
@@ -358,8 +364,6 @@ def main():
         
         fold_count = torch.zeros(1).cuda()  # To count the number of folds processed
         # K-Fold Loop: Each fold gets a separate train/validation split per epoch
-        
-        
         for fold, (train_idx, val_idx) in enumerate(kf.split(all_image_paths)):
 
             if fold % dist.get_world_size() != dist.get_rank():
@@ -429,7 +433,15 @@ def main():
 
             dist.barrier()
 
+
         # print(dist.get_rank(), f"Rank {dist.get_rank()} completed all folds for Epoch {epoch}")
+
+
+        epoch_end_time = time.time()
+        epoch_duration = epoch_end_time - epoch_start_time
+       # Peak GPU memory, in MB
+        peak_mem_mb = torch.cuda.max_memory_allocated(device) / 1024**2
+
 
         dist.barrier()
      
@@ -459,7 +471,13 @@ def main():
                 log = pd.read_csv(log_filename)
                 last_logged_epoch = log['epoch'].max()  # Get the last logged epoch
             else:
-                log = pd.DataFrame(columns=['epoch', 'lr', 'loss', 'iou', 'dice', 'val_loss', 'val_iou', 'val_dice'])
+                # log = pd.DataFrame(columns=['epoch', 'lr', 'loss', 'iou', 'dice', 'val_loss', 'val_iou', 'val_dice'])
+                log = pd.DataFrame(columns=[
+                    'epoch', 'lr', 'loss', 'iou', 'dice',
+                    'val_loss', 'val_iou', 'val_dice',
+                    'epoch_time_s',          # NEW
+                    'peak_mem_MB'            # NEW
+                ])
                 last_logged_epoch = 0
 
         # Inside the epoch loop
@@ -474,7 +492,9 @@ def main():
                     'dice': avg_metrics['dice'],
                     'val_loss': avg_metrics['val_loss'],
                     'val_iou': avg_metrics['val_iou'],
-                    'val_dice': avg_metrics['val_dice']
+                    'val_dice': avg_metrics['val_dice'],
+                    'epoch_time_s': epoch_duration,
+                    'peak_mem_MB': peak_mem_mb
             }
 
             # Append the new row directly to the log DataFrame
@@ -502,7 +522,7 @@ def main():
             'epoch': epoch + 1,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            # 'scheduler_state_dict': scheduler.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
             'best_dice': best_dice
         }, checkpoint_filename)
 
@@ -512,7 +532,7 @@ def main():
                 print("=> Early stopping triggered")
             break
 
-        # scheduler.step()
+        scheduler.step()
 
         torch.cuda.empty_cache()
     

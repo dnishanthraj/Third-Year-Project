@@ -12,6 +12,7 @@ import yaml
 from tqdm import tqdm
 import xgboost as xgb
 import joblib
+import time
 
 # For morphological features and connectivity analysis
 from skimage.measure import regionprops, label as sklabel
@@ -98,7 +99,7 @@ def apply_fpr_classifier(pred_mask, clinical_feats, classifier, distance_thresho
     for n in range(num_features):
         candidate = (labeled_array == (n + 1)).astype(np.uint8)
         morph_feats = extract_morphological_features(candidate)
-        feature_vector = np.array(clinical_feats + morph_feats).reshape(1, -1)
+        feature_vector = np.array(morph_feats).reshape(1, -1)
         pred_label = classifier.predict(feature_vector)
         if pred_label[0] == 0:
             modified_mask[candidate == 1] = 0
@@ -136,19 +137,8 @@ def train_fpr_classifier(fp_out_dir, meta_csv, clean_meta_csv, IMAGE_DIR, MASK_D
             pred_mask = (output > 0.5).float().cpu().numpy()[0, 0]
         detection_label = is_true_detection(pred_mask, gt_mask, distance_threshold=80)
         morph_feats = extract_morphological_features(pred_mask)
-        clinical_feats = [
-            row.get('malignancy', 0),
-            row.get('subtlety', 0),
-            row.get('texture', 0),
-            row.get('sphericity', 0),
-            row.get('margin', 0)
-        ]
+        
         feat_dict = {
-            'malignancy': clinical_feats[0],
-            'subtlety': clinical_feats[1],
-            'texture': clinical_feats[2],
-            'sphericity': clinical_feats[3],
-            'margin': clinical_feats[4],
             'area': morph_feats[0],
             'perimeter': morph_feats[1],
             'eccentricity': morph_feats[2],
@@ -176,19 +166,7 @@ def train_fpr_classifier(fp_out_dir, meta_csv, clean_meta_csv, IMAGE_DIR, MASK_D
         else:
             detection_label = 0  # All candidates in clean images are false positives.
         morph_feats = extract_morphological_features(pred_mask)
-        clinical_feats = [
-            row.get('malignancy', 0),
-            row.get('subtlety', 0),
-            row.get('texture', 0),
-            row.get('sphericity', 0),
-            row.get('margin', 0)
-        ]
         feat_dict = {
-            'malignancy': clinical_feats[0],
-            'subtlety': clinical_feats[1],
-            'texture': clinical_feats[2],
-            'sphericity': clinical_feats[3],
-            'margin': clinical_feats[4],
             'area': morph_feats[0],
             'perimeter': morph_feats[1],
             'eccentricity': morph_feats[2],
@@ -203,12 +181,11 @@ def train_fpr_classifier(fp_out_dir, meta_csv, clean_meta_csv, IMAGE_DIR, MASK_D
     features_df.to_csv(features_csv, index=False)
     print(f"Features saved to {features_csv}")
     
-    feature_columns = ['malignancy', 'subtlety', 'texture', 'sphericity', 'margin',
-                       'area', 'perimeter', 'eccentricity', 'solidity', 'compactness']
+    feature_columns = ['area', 'perimeter', 'eccentricity', 'solidity', 'compactness']
     X = features_df[feature_columns].values
     y = features_df['label'].values
 
-    kf = KFold(n_splits=3, shuffle=True, random_state=42)
+    kf = KFold(n_splits=5, shuffle=True, random_state=42)
     clf = xgb.XGBClassifier(
         n_estimators=100,
         max_depth=4,
@@ -297,8 +274,11 @@ def main():
     model = model.cuda()
     model.eval()
 
-    # Load Grad-CAM generator
-    grad_cam = GradCAM(model, model.conv2_0)
+    if args['name'] == 'NestedUNET':
+        grad_cam = GradCAM(model, model.conv2_0)  # Nested UNet architecture
+    else:
+        grad_cam = GradCAM(model, model.down2)  # Normal UNet architecture
+
 
     # Fixed directories for data
     IMAGE_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Preprocessing/data/Image/'
@@ -374,7 +354,8 @@ def main():
     #############################
     avg_meters = {'iou': AverageMeter(), 'dice': AverageMeter()}
     per_patient_metrics_raw = {}
-
+    total_inference_time = 0.0
+    total_slices = 0
     with torch.no_grad():
         counter = 0
         pbar = tqdm(total=len(test_loader), desc="Raw predictions (Normal)")
@@ -382,7 +363,12 @@ def main():
         for (input, target, pids) in test_loader:
             input = input.cuda()
             target = target.cuda()
+            t0 = time.time()
             output = model(input)
+            t1 = time.time()
+            total_inference_time += (t1 - t0)
+            total_slices += input.size(0)
+
             iou = iou_score(output, target)
             dice = dice_coef2(output, target)
             avg_meters['iou'].update(iou, input.size(0))
@@ -411,6 +397,9 @@ def main():
             pbar.set_postfix({'iou': avg_meters['iou'].avg, 'dice': avg_meters['dice'].avg})
         pbar.close()
     print("=" * 50)
+
+    avg_inference_ms_raw = (total_inference_time / total_slices) * 1000.0
+    # print(f'Avg inference time per slice (Raw): {avg_inference_ms_raw:.2f} ms')
     
     # Compute unweighted (patient-level) averages for the raw test set
     raw_patient_dice = [np.mean(dct["dice_vals"]) for dct in per_patient_metrics_raw.values()]
@@ -425,13 +414,12 @@ def main():
     tp, tn, fp, fn = confusion_matrix
     precision = calculate_precision(tp, fp)
     recall = calculate_recall(tp, fn)
-    fpps = calculate_fpps(fp, total_patients)
+    fpps = calculate_fpps(fp, total_slices)
     accuracy = calculate_accuracy(tp, tn, fp, fn)
-    specificity = calculate_specificity(tn, fp)
-    f1_score = calculate_f1_score(precision, recall)
     metrics = OrderedDict([
         ("Dice", unweighted_dice_raw),
         ("IoU", unweighted_iou_raw),
+        ("Inference Time (ms)", avg_inference_ms_raw),
         ("Total Slices", len(test_image_paths)),
         ("Total Patients", total_patients),
         ("True Positive (TP)", tp),
@@ -442,8 +430,6 @@ def main():
         ("Recall", recall),
         ("FPPS", fpps),
         ("Accuracy", accuracy),  # Add Accuracy
-        ("Specificity", specificity),  # Add Specificity
-        ("F1-Score", f1_score)  # Add F1-Score
     ])
     save_metrics_to_csv(metrics, METRICS_DIR)
     print("Raw metrics (Normal) saved.")
@@ -460,13 +446,19 @@ def main():
     #############################
     avg_meters_clean = {'iou': AverageMeter(), 'dice': AverageMeter()}
     per_patient_metrics_clean = {}
+    total_inference_time = 0.0
+    total_slices = 0
     with torch.no_grad():
         counter = 0
         pbar = tqdm(total=len(clean_test_loader), desc="Raw predictions (Clean)")
         for (input, target, pids) in clean_test_loader:
             input = input.cuda()
             target = target.cuda()
+            t0 = time.time()
             output = model(input)
+            t1 = time.time()
+            total_inference_time += (t1 - t0)
+            total_slices += input.size(0)
             iou = iou_score(output, target)
             dice = dice_coef2(output, target)
             avg_meters_clean['iou'].update(iou, input.size(0))
@@ -494,6 +486,7 @@ def main():
         pbar.close()
     print("=" * 50)
     
+    avg_inference_ms_clean = (total_inference_time / total_slices) * 1000.0
     # Compute unweighted (patient-level) averages for the clean test set
     clean_patient_dice = [np.mean(dct["dice_vals"]) for dct in per_patient_metrics_clean.values()]
     clean_patient_iou  = [np.mean(dct["iou_vals"])  for dct in per_patient_metrics_clean.values()]
@@ -507,14 +500,13 @@ def main():
     tp_clean, tn_clean, fp_clean, fn_clean = clean_confusion_matrix
     precision_clean = calculate_precision(tp_clean, fp_clean)
     recall_clean = calculate_recall(tp_clean, fn_clean)
-    fpps_clean = calculate_fpps(fp_clean, clean_total_patients)
+    fpps_clean = calculate_fpps(fp_clean, total_slices)
     accuracy_clean = calculate_accuracy(tp_clean, tn_clean, fp_clean, fn_clean)
-    specificity_clean = calculate_specificity(tn_clean, fp_clean)
-    f1_score_clean = calculate_f1_score(precision_clean, recall_clean)
     
     metrics_clean = OrderedDict([
         ("Dice", unweighted_dice_clean),
         ("IoU", unweighted_iou_clean),
+        ("Inference Time (ms)", avg_inference_ms_clean),
         ("Total Slices", len(clean_test_image_paths)),
         ("Total Patients", clean_total_patients),
         ("True Positive (TP)", tp_clean),
@@ -525,8 +517,6 @@ def main():
         ("Recall", recall_clean),
         ("FPPS", fpps_clean),
         ("Accuracy", accuracy_clean),  # Add Accuracy
-        ("Specificity", specificity_clean),  # Add Specificity
-        ("F1-Score", f1_score_clean)  # Add F1-Score
     ])
     save_metrics_to_csv(metrics_clean, METRICS_DIR, filename="metrics_clean.csv")
     print("Raw metrics (Clean) saved.")
@@ -567,13 +557,20 @@ def main():
     #############################
     avg_meters_fpr = {'iou': AverageMeter(), 'dice': AverageMeter()}
     per_patient_metrics_fpr = {}
+    total_inference_time = 0.0
+    total_slices = 0
+
     with torch.no_grad():
         counter = 0
         pbar = tqdm(total=len(test_loader), desc="FPR post-processing (Normal)")
         for input, target, pids in test_loader:
             input = input.cuda()
             target = target.cuda()
+            t0 = time.time()
             output = model(input)
+            t1 = time.time()
+            total_inference_time += (t1 - t0)
+            total_slices += input.size(0)
             output = torch.sigmoid(output)
             output = (output > 0.5).float().cpu().numpy()
             output = np.squeeze(output, axis=1)
@@ -610,6 +607,9 @@ def main():
         pbar.close()
     print("=" * 50)
     
+    avg_inference_ms_fpr = (total_inference_time / total_slices) * 1000.0
+
+
     # --- Compute Unweighted (Patient-Level) Averages for FPR (Normal) ---
     fpr_patient_dice = [np.mean(dct["dice_vals"]) for dct in per_patient_metrics_fpr.values()]
     fpr_patient_iou  = [np.mean(dct["iou_vals"]) for dct in per_patient_metrics_fpr.values()]
@@ -623,13 +623,13 @@ def main():
     tp_fpr, tn_fpr, fp_fpr, fn_fpr = confusion_matrix_fpr
     precision_fpr = calculate_precision(tp_fpr, fp_fpr)
     recall_fpr = calculate_recall(tp_fpr, fn_fpr)
-    fpps_fpr = calculate_fpps(fp_fpr, total_patients)
+    fpps_fpr = calculate_fpps(fp_fpr, total_slices)
     accuracy_fpr = calculate_accuracy(tp_fpr, tn_fpr, fp_fpr, fn_fpr)
-    specificity_fpr = calculate_specificity(tn_fpr, fp_fpr)
-    f1_score_fpr = calculate_f1_score(precision_fpr, recall_fpr)
+
     metrics_fpr = OrderedDict([
         ("Dice", unweighted_dice_fpr),
         ("IoU", unweighted_iou_fpr),
+        ("Inference Time (ms)", avg_inference_ms_fpr),
         ("Total Slices", len(test_image_paths)),
         ("Total Patients", total_patients),
         ("True Positive (TP)", tp_fpr),
@@ -640,8 +640,6 @@ def main():
         ("Recall", recall_fpr),
         ("FPPS", fpps_fpr),
         ("Accuracy", accuracy_fpr),  # Add Accuracy
-        ("Specificity", specificity_fpr),  # Add Specificity
-        ("F1-Score", f1_score_fpr)  # Add F1-Score
     ])
     save_metrics_to_csv(metrics_fpr, METRICS_DIR, filename="metrics_fpr.csv")
     print("FPR metrics (Normal) saved.")
@@ -651,13 +649,20 @@ def main():
     #############################
     avg_meters_fpr_clean = {'iou': AverageMeter(), 'dice': AverageMeter()}
     per_patient_metrics_fpr_clean = {}  # Initialize a separate dictionary for clean FPR metrics
+    total_inference_time = 0.0
+    total_slices = 0
+
     with torch.no_grad():
         counter = 0
         pbar = tqdm(total=len(clean_test_loader), desc="FPR post-processing (Clean)")
         for input, target, pids in clean_test_loader:
             input = input.cuda()
             target = target.cuda()
+            t0 = time.time()
             output = model(input)
+            t1 = time.time()
+            total_inference_time += (t1 - t0)
+            total_slices += input.size(0)
             output = torch.sigmoid(output)
             output = (output > 0.5).float().cpu().numpy()
             output = np.squeeze(output, axis=1)
@@ -695,6 +700,7 @@ def main():
         pbar.close()
     print("=" * 50)
     
+    avg_inference_ms_fpr_clean = (total_inference_time / total_slices) * 1000.0
     # --- Compute Unweighted (Patient-Level) Averages for FPR (Clean) ---
     fpr_clean_patient_dice = [np.mean(dct["dice_vals"]) for dct in per_patient_metrics_fpr_clean.values()]
     fpr_clean_patient_iou  = [np.mean(dct["iou_vals"]) for dct in per_patient_metrics_fpr_clean.values()]
@@ -710,14 +716,13 @@ def main():
     tp_clean_fpr, tn_clean_fpr, fp_clean_fpr, fn_clean_fpr = clean_confusion_matrix_fpr
     precision_clean_fpr = calculate_precision(tp_clean_fpr, fp_clean_fpr)
     recall_clean_fpr = calculate_recall(tp_clean_fpr, fn_clean_fpr)
-    fpps_clean_fpr = calculate_fpps(fp_clean_fpr, clean_total_patients)
+    fpps_clean_fpr = calculate_fpps(fp_clean_fpr, total_slices)
     accuracy_clean_fpr = calculate_accuracy(tp_clean_fpr, tn_clean_fpr, fp_clean_fpr, fn_clean_fpr)
-    specificity_clean_fpr = calculate_specificity(tn_clean_fpr, fp_clean_fpr)
-    f1_score_clean_fpr = calculate_f1_score(precision_clean_fpr, recall_clean_fpr)
     
     metrics_fpr_clean = OrderedDict([
         ("Dice", unweighted_dice_fpr_clean),
         ("IoU", unweighted_iou_fpr_clean),
+        ("Inference Time (ms)", avg_inference_ms_fpr_clean),
         ("Total Slices", len(clean_test_image_paths)),
         ("Total Patients", clean_total_patients),
         ("True Positive (TP)", tp_clean_fpr),
@@ -728,8 +733,6 @@ def main():
         ("Recall", recall_clean_fpr),
         ("FPPS", fpps_clean_fpr),
         ("Accuracy", accuracy_clean_fpr),  # Add Accuracy
-        ("Specificity", specificity_clean_fpr),  # Add Specificity
-        ("F1-Score", f1_score_clean_fpr)  # Add F1-Score
     ])
     save_metrics_to_csv(metrics_fpr_clean, METRICS_DIR, filename="metrics_fpr_clean.csv")
     print("FPR metrics (Clean) saved.")

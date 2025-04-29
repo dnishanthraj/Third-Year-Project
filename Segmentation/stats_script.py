@@ -41,21 +41,24 @@ def load_metrics(metrics_path):
     TP = float(metrics.get("True Positive (TP)", 0.0))
     FP = float(metrics.get("False Positive (FP)", 0.0))
     FN = float(metrics.get("False Negative (FN)", 0.0))
+    total_slices = float(metrics.get("Total Slices", 1.0))  # Default to 1 to avoid division by zero
     total_patients = float(metrics.get("Total Patients", 1.0))  # Default to 1 to avoid division by zero
 
     # Compute Precision, Recall, and FPPS safely
     precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
     recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
-    fpps = FP / total_patients if total_patients > 0 else 0.0  # FPPS per patient
+    # fpps = FP / total_patients if total_patients > 0 else 0.0  # FPPS per patient
+    fpps = FP / total_slices if total_slices > 0 else 0.0
 
-    return {"TP": TP, "FP": FP, "FN": FN, "Total Patients": total_patients, "Precision": precision, "Recall": recall, "FPPS": fpps}
+
+    return {"TP": TP, "FP": FP, "FN": FN, "Total Patients": total_patients, "Total Slices": total_slices, "Precision": precision, "Recall": recall, "FPPS": fpps}
 
 
 def compute_combined_metrics(metrics_files):
     """
     Sums TP, FP, FN, Total Patients from multiple files and calculates the overall Precision, Recall, and FPPS.
     """
-    total_TP = total_FP = total_FN = total_patients = 0.0
+    total_TP = total_FP = total_FN = total_patients = total_slices = 0.0
     
     for metrics_file in metrics_files:
         metrics = load_metrics(metrics_file)
@@ -63,11 +66,13 @@ def compute_combined_metrics(metrics_files):
         total_FP += metrics["FP"]
         total_FN += metrics["FN"]
         total_patients += metrics["Total Patients"]
+        total_slices += metrics["Total Slices"]
+        
 
     # Compute combined Precision, Recall, and FPPS safely
     combined_precision = total_TP / (total_TP + total_FP) if (total_TP + total_FP) > 0 else 0.0
     combined_recall = total_TP / (total_TP + total_FN) if (total_TP + total_FN) > 0 else 0.0
-    combined_fpps = total_FP / total_patients if total_patients > 0 else 0.0  # FPPS per patient
+    combined_fpps = total_FP / total_slices if total_slices > 0 else 0.0
 
     return combined_precision, combined_recall, combined_fpps
 

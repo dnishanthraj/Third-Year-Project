@@ -17,3 +17,6 @@
 /Segmentation/model_outputs
 /Segmentation/figures
 /Segmentation/grad_cam_outputs
+/Dashboard/__pycache__
+/Dashboard/.streamlit
+/Dashboard/components/__pycache__

@@ -1,201 +1,303 @@
 
-import pandas as pd
-import argparse
-import os
-from collections import OrderedDict
-from glob import glob
-import yaml
+# ---------------------------------------------------------
+# Importing required libraries for data processing, training, and evaluation
+# ---------------------------------------------------------
 
+import pandas as pd                    # Data manipulation and analysis
+import argparse                         # Command-line argument parsing
+import os                               # OS operations (path, environment variables)
+from collections import OrderedDict     # Maintaining order of dictionary elements
+from glob import glob                   # File pattern matching
+import yaml                             # YAML file processing (saving/loading configs)
+import time                             # Timing utilities
+
+# PyTorch-related imports for model training
 import torch
-import torch.backends.cudnn as cudnn
-import torch.nn as nn
-import torch.optim as optim
-# from torch.optim import lr_scheduler
-# from torch.optim.lr_scheduler import StepLR #Added this
-from datetime import datetime
-import uuid
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data.distributed import DistributedSampler
+import torch.backends.cudnn as cudnn    # cuDNN backend for GPU acceleration
+import torch.nn as nn                   # Neural network components
+import torch.optim as optim             # Optimization algorithms
+from torch.optim import lr_scheduler    # Learning rate scheduling
+from torch.optim.lr_scheduler import StepLR  # Step learning rate decay
+from datetime import datetime           # Timestamping
+import uuid                              # Unique identifier generation
+import torch.distributed as dist         # Distributed training
+from torch.nn.parallel import DistributedDataParallel as DDP   # DDP wrapper
+from torch.utils.data.distributed import DistributedSampler    # Distributed sampling
 
-# cudnn.benchmark = True
-# cudnn.deterministic = False
+# Machine Learning utilities
+from sklearn.model_selection import KFold       # K-Fold cross-validation
+import albumentations as albu                    # Data augmentation library
+from sklearn.model_selection import train_test_split  # Splitting data into train/test
+from tqdm import tqdm                             # Progress bar for loops
 
-from sklearn.model_selection import KFold
+# Project-specific modules
+from losses import BCEDiceLoss, BCEDiceFocalLoss, FocalLoss    # Loss functions
+from dataset import MyLidcDataset                              # Custom dataset class
+from metrics import iou_score, dice_coef                       # Evaluation metrics
+from utils import AverageMeter, str2bool                       # Utility functions
 
-import albumentations as albu
-from sklearn.model_selection import train_test_split
-from tqdm import tqdm
-from losses import BCEDiceLoss, BCEDiceFocalLoss, FocalLoss
-from dataset import MyLidcDataset
-from metrics import iou_score,dice_coef
-from utils import AverageMeter, str2bool
+# Model architectures
+from Unet.unet_model import UNet                    # Standard U-Net model
+from UnetNested.Nested_Unet import NestedUNet        # Nested U-Net model (UNet++)
 
-from Unet.unet_model import UNet
-from UnetNested.Nested_Unet import NestedUNet
+# ---------------------------------------------------------
+# Environment Setup
+# ---------------------------------------------------------
 
-
-# torch.backends.cudnn.enabled = False
-# torch.backends.cudnn.deterministic = True
+# Enable cuDNN auto-tuner for faster training (adjusts algorithms for hardware)
 cudnn.benchmark = True
 
-# Set the number of threads dynamically based on available CPU cores
-num_threads = torch.get_num_threads()  # Or manually set a value, e.g., num_threads = 8
+# Dynamically set the number of CPU threads for data loading and operations
+num_threads = torch.get_num_threads()
 torch.set_num_threads(num_threads)
 torch.set_num_interop_threads(num_threads)
 
-# Set environment variables for threading
+# Set environment variables for thread parallelism
 os.environ["OMP_NUM_THREADS"] = str(num_threads)
 os.environ["MKL_NUM_THREADS"] = str(num_threads)
 
+# ---------------------------------------------------------
+# Argument Parsing Function
+# ---------------------------------------------------------
+
 def parse_args():
+    """
+    Parses command-line arguments for model training configuration.
+
+    Returns:
+        argparse.Namespace: A namespace containing all parsed configuration arguments.
+    """
     parser = argparse.ArgumentParser()
 
-    # model
+    # Model selection
     parser.add_argument('--name', default="UNET",
-                        help='model name: UNET',choices=['UNET', 'NestedUNET'])
-    parser.add_argument('--epochs', default=100, type=int, metavar='N',
-                        help='number of total epochs to run')
-    
+                        choices=['UNET', 'NestedUNET'],
+                        help='Model architecture to use: UNET or NestedUNET.')
 
-                        # 8 FOR 3 GPU's, 4 FOR 2 GPU's?
-    parser.add_argument('-b', '--batch_size', default=8, type=int, #Changed default to 4 from 12
-                        metavar='N', help='mini-batch size (default: 6)')
+    # Training parameters
+    parser.add_argument('--epochs', default=70, type=int, metavar='N',
+                        help='Total number of training epochs.')
+    parser.add_argument('-b', '--batch_size', default=8, type=int,
+                        metavar='N', help='Mini-batch size for training.')
+
     parser.add_argument('--early_stopping', default=20, type=int,
-                        metavar='N', help='early stopping (default: 50)')
-    parser.add_argument('--num_workers', default=12, type=int)
+                        metavar='N', help='Number of epochs to trigger early stopping.')
 
-    # optimizer
+    parser.add_argument('--num_workers', default=12, type=int,
+                        help='Number of data loading worker threads.')
+
+    # Optimizer settings
     parser.add_argument('--optimizer', default='Adam',
                         choices=['Adam', 'SGD'],
-                        help='loss: ' +
-                        ' | '.join(['Adam', 'SGD']) +
-                        ' (default: Adam)')
-    parser.add_argument('--lr', '--learning_rate', default=1e-5, type=float, 
-                        metavar='LR', help='initial learning rate')
-    parser.add_argument('--momentum', default=0.9, type=float, #Not needed, sticking with Adam, screw SGD
-                        help='momentum')
+                        help='Optimizer to use: Adam or SGD.')
+    parser.add_argument('--lr', '--learning_rate', default=1e-4, type=float,
+                        metavar='LR', help='Initial learning rate.')
+    parser.add_argument('--momentum', default=0.9, type=float,
+                        help='Momentum factor for SGD (not used with Adam).')
     parser.add_argument('--weight_decay', default=0.0001, type=float,
-                        help='weight decay')
+                        help='Weight decay (L2 regularization).')
     parser.add_argument('--nesterov', default=False, type=str2bool,
-                        help='nesterov')
+                        help='Use Nesterov momentum with SGD.')
 
-    # data
-    parser.add_argument('--augmentation',type=str2bool,default=False,choices=[True,False])
-
-
+    # Data augmentation
+    parser.add_argument('--augmentation', type=str2bool, default=False,
+                        choices=[True, False],
+                        help='Enable data augmentation.')
 
     config = parser.parse_args()
-
     return config
 
 
+
 def train(train_loader, model, criterion, optimizer):
+    """
+    Trains the model for one epoch.
 
-    
-    avg_meters = {'loss': AverageMeter(),
-                  'iou': AverageMeter(),
-                  'dice': AverageMeter()}
+    Args:
+        train_loader (DataLoader): Dataloader for training samples.
+        model (torch.nn.Module): Model to be trained.
+        criterion (torch.nn.Module): Loss function.
+        optimizer (torch.optim.Optimizer): Optimizer used to update model weights.
 
-    model.train()
+    Returns:
+        OrderedDict: Average training loss, IOU score, and Dice coefficient for the epoch.
+    """
+    # Initialize average meters to track metrics
+    avg_meters = {
+        'loss': AverageMeter(),
+        'iou': AverageMeter(),
+        'dice': AverageMeter()
+    }
 
-    # pbar = tqdm(total=len(train_loader), desc=f"Rank {dist.get_rank()} Training")
+    model.train()  # Set model to training mode
+
+    # Progress bar for training
     pbar = tqdm(total=len(train_loader), desc="Training", disable=(dist.get_rank() != 0))
 
-
+    # Iterate over training data
     for input, target in train_loader:
-
         input = input.cuda()
         target = target.cuda()
+
+        # Forward pass
         output = model(input)
 
+        # Compute loss and evaluation metrics
         loss = criterion(output, target)
         iou = iou_score(output, target)
         dice = dice_coef(output, target)
-        
-        dist.barrier()  # Ensure all ranks reach this point
-        # compute gradient and do optimizing step
+
+        dist.barrier()  # Ensure synchronization across all distributed processes
+
+        # Backward pass and optimization
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
+        # Update average metrics
         avg_meters['loss'].update(loss.item(), input.size(0))
         avg_meters['iou'].update(iou, input.size(0))
         avg_meters['dice'].update(dice, input.size(0))
 
+        # Update progress bar
         postfix = OrderedDict([
             ('loss', avg_meters['loss'].avg),
             ('iou', avg_meters['iou'].avg),
-            ('dice',avg_meters['dice'].avg)
+            ('dice', avg_meters['dice'].avg)
         ])
         pbar.set_postfix(postfix)
         pbar.update(1)
+
     pbar.close()
 
-    return OrderedDict([('loss', avg_meters['loss'].avg),
-                        ('iou', avg_meters['iou'].avg),
-                        ('dice',avg_meters['dice'].avg)])
+    return OrderedDict([
+        ('loss', avg_meters['loss'].avg),
+        ('iou', avg_meters['iou'].avg),
+        ('dice', avg_meters['dice'].avg)
+    ])
+
 
 def validate(val_loader, model, criterion):
-    avg_meters = {'loss': AverageMeter(),
-                  'iou': AverageMeter(),
-                  'dice': AverageMeter()}
+    """
+    Evaluates the model on the validation set.
 
-    # switch to evaluate mode
-    model.eval()
+    Args:
+        val_loader (DataLoader): Dataloader for validation samples.
+        model (torch.nn.Module): Model to be evaluated.
+        criterion (torch.nn.Module): Loss function.
+
+    Returns:
+        OrderedDict: Average validation loss, IOU score, and Dice coefficient.
+    """
+    # Initialize average meters to track metrics
+    avg_meters = {
+        'loss': AverageMeter(),
+        'iou': AverageMeter(),
+        'dice': AverageMeter()
+    }
+
+    model.eval()  # Set model to evaluation mode
 
     with torch.no_grad():
-        # pbar = tqdm(total=len(val_loader), desc=f"Rank {dist.get_rank()} Validation")
+        # Progress bar for validation
         pbar = tqdm(total=len(val_loader), desc="Validation", disable=(dist.get_rank() != 0))
 
+        # Iterate over validation data
         for input, target in val_loader:
             input = input.cuda().float()
             target = target.cuda().float()
 
+            # Forward pass
             output = model(input)
+
+            # Compute loss and evaluation metrics
             loss = criterion(output, target)
             iou = iou_score(output, target)
             dice = dice_coef(output, target)
 
+            # Update average metrics
             avg_meters['loss'].update(loss.item(), input.size(0))
             avg_meters['iou'].update(iou, input.size(0))
             avg_meters['dice'].update(dice, input.size(0))
 
+            # Update progress bar
             postfix = OrderedDict([
                 ('loss', avg_meters['loss'].avg),
                 ('iou', avg_meters['iou'].avg),
-                ('dice',avg_meters['dice'].avg)
+                ('dice', avg_meters['dice'].avg)
             ])
             pbar.set_postfix(postfix)
             pbar.update(1)
+
         pbar.close()
 
-    return OrderedDict([('loss', avg_meters['loss'].avg),
-                        ('iou', avg_meters['iou'].avg),
-                        ('dice',avg_meters['dice'].avg)])
+    return OrderedDict([
+        ('loss', avg_meters['loss'].avg),
+        ('iou', avg_meters['iou'].avg),
+        ('dice', avg_meters['dice'].avg)
+    ])
 
 def save_checkpoint(state, filename):
+    """
+    Saves the current training state (model and optimizer) to a file.
+
+    Args:
+        state (dict): Dictionary containing model and optimizer states.
+        filename (str): Path to save the checkpoint.
+    """
     if dist.get_rank() == 0:
         torch.save(state, filename)
 
+
 def load_checkpoint(filename, model, optimizer):
+    """
+    Loads a saved checkpoint into the model and optimizer.
+
+    Args:
+        filename (str): Path to the checkpoint file.
+        model (torch.nn.Module): Model to load the weights into.
+        optimizer (torch.optim.Optimizer): Optimizer to load the state into.
+
+    Returns:
+        tuple: (epoch, best_dice) where epoch is the last completed epoch and best_dice is the best validation dice score achieved.
+    """
     checkpoint = torch.load(filename)
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])  # Scheduler loading is commented out
     return checkpoint['epoch'], checkpoint['best_dice']
 
+
 def setup_ddp():
+    """
+    Initializes the Distributed Data Parallel (DDP) environment.
+
+    Returns:
+        torch.device: The current device assigned to this process.
+    """
     dist.init_process_group(backend="nccl")
     torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
     device = torch.device("cuda", int(os.environ["LOCAL_RANK"]))
     return device
 
+
 def cleanup_ddp():
+    """
+    Cleans up the Distributed Data Parallel (DDP) environment.
+    """
     dist.destroy_process_group()
 
+
 def reduce_mean(tensor):
-    """Averages a tensor across all GPUs."""
+    """
+    Reduces the input tensor across all GPUs by averaging.
+
+    Args:
+        tensor (torch.Tensor): Tensor to be averaged across devices.
+
+    Returns:
+        torch.Tensor: Averaged tensor.
+    """
     if tensor.is_cuda:
         dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
         tensor /= dist.get_world_size()
@@ -203,15 +305,20 @@ def reduce_mean(tensor):
 
 
 def main():
-    # Get configuration
+    """
+    Main training loop for distributed multi-GPU training.
+    Handles model setup, checkpointing, K-Fold cross-validation, 
+    training, validation, and logging.
+    """
+    # ----------------- Distributed Setup -----------------
     device = setup_ddp()
 
     if dist.get_rank() == 0:
         print(f"Distributed training initialized with {dist.get_world_size()} processes.")
 
     config = vars(parse_args())
-    # torch.backends.cudnn.enabled = False
-    # torch.backends.cuda.matmul.allow_tf32 = False
+
+    # Print system information (only by rank 0)
     if dist.get_rank() == 0:
         print("CUDA Available:", torch.cuda.is_available())
         print("CUDA Version:", torch.version.cuda)
@@ -219,134 +326,116 @@ def main():
         print("Allocated Memory:", torch.cuda.memory_allocated())
         print("Reserved Memory:", torch.cuda.memory_reserved())
 
-    # Make Model output directory
+    # ----------------- Output Directory Setup -----------------
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     unique_id = uuid.uuid4().hex[:8]
 
-
-    if config['augmentation']== True:
-        file_name= f"{config['name']}_with_augmentation_{timestamp}_{unique_id}" 
+    if config['augmentation']:
+        file_name = f"{config['name']}_with_augmentation_{timestamp}_{unique_id}"
     else:
         file_name = f"{config['name']}_base_{timestamp}_{unique_id}"
-    
 
     if dist.get_rank() == 0:
-        # if not os.path.exists(f'model_outputs/{file_name}'):
         os.makedirs(f'model_outputs/{file_name}', exist_ok=True)
         print(f"Creating directory: model_outputs/{file_name}")
-        # Save configuration once if not already present
+
+        # Save configuration settings to YAML
         config_path = f'model_outputs/{file_name}/config.yml'
-    
-        # if not os.path.exists(config_path):
         with open(config_path, 'w') as f:
             yaml.dump(config, f)
         print("Config file created.")
 
+    # Ensure all processes wait until directory and config are ready
     dist.barrier()
 
-# Ensure all GPUs wait for folder and config.yml creation
     if dist.get_rank() == 0:
-        print("Creating directory called",file_name)
-    # dist.barrier()
-
         print('-' * 20)
-        print("Configuration Setting as follow")
-        for key in config:
-            print('{}: {}'.format(key, config[key]))
+        print("Configuration settings:")
+        for key, value in config.items():
+            print(f'{key}: {value}')
         print('-' * 20)
 
-    #criterion = nn.BCEWithLogitsLoss().cuda()
-    criterion = BCEDiceLoss().cuda()
-    # criterion = BCEDiceFocalLoss(
-    # alpha=1.0,      # typical focal parameter
-    # gamma=2.0,      # typical focal parameter
-    # focal_weight=0.5
-    # ).cuda()
-    # criterion = FocalLoss(alpha=1.0, gamma=2.0, reduction='mean')
-    cudnn.benchmark = True  # Was False - change to True?
-    # cudnn.deterministic = True
+    # ----------------- Loss Function -----------------
+    criterion = BCEDiceFocalLoss( # By default, this is set to BCEDiceFocalLoss
+        alpha=1.0,
+        gamma=2.0,
+        focal_weight=0.5
+    ).cuda()
 
-    # Initialize distributed training
-    # create model
+    cudnn.benchmark = True
+
+    # ----------------- Model Setup -----------------
     if dist.get_rank() == 0:
-        print("=> creating model" )
+        print("=> Creating model...")
 
-    if config['name']=='NestedUNET':
+    if config['name'] == 'NestedUNET':
         model = NestedUNet(num_classes=1)
     else:
         model = UNet(n_channels=1, n_classes=1, bilinear=True)
-    # model = model.cuda()
+    
     model = model.to(device)
 
+    # Wrap model in DistributedDataParallel (DDP)
     if torch.cuda.device_count() > 1:
         if dist.get_rank() == 0:
-            print("Let's use", torch.cuda.device_count(), "GPUs!")
-        # model = nn.DataParallel(model)
+            print(f"Using {torch.cuda.device_count()} GPUs.")
         model = DDP(model, device_ids=[int(os.environ["LOCAL_RANK"])])
 
+    # ----------------- Optimizer and Scheduler -----------------
     params = filter(lambda p: p.requires_grad, model.parameters())
-
 
     if config['optimizer'] == 'Adam':
         optimizer = optim.Adam(params, lr=config['lr'], weight_decay=config['weight_decay'])
     elif config['optimizer'] == 'SGD':
-        optimizer = optim.SGD(params, lr=config['lr'], momentum=config['momentum'],nesterov=config['nesterov'], weight_decay=config['weight_decay'])
+        optimizer = optim.SGD(params, lr=config['lr'], momentum=config['momentum'],
+                              nesterov=config['nesterov'], weight_decay=config['weight_decay'])
     else:
-        raise NotImplementedError
+        raise NotImplementedError("Unsupported optimizer selected.")
 
-    # ADD LEARNING RATE SCHEDULER HERE
-    # scheduler = StepLR(optimizer, step_size=40, gamma=0.8)  # Reducing LR by 10% every 50 epochs
+    scheduler = StepLR(optimizer, step_size=40, gamma=0.8)
 
-    # Directory of Image, Mask folder generated from the preprocessing stage ###
-    # Write your own directory                                                 #
-    IMAGE_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Preprocessing/data/Image/'                                       #
-    MASK_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Preprocessing/data/Mask/'      
-                                       #
-    #Meta Information                                                      #
-    meta = pd.read_csv('/dcs/22/u2202609/year_3/cs310/Project/Preprocessing/csv/meta.csv')                    #
-    ############################################################################
-    # Get train/test label from meta.csv
-    meta['original_image']= meta['original_image'].apply(lambda x:IMAGE_DIR+ x +'.npy')
-    meta['mask_image'] = meta['mask_image'].apply(lambda x:MASK_DIR+ x +'.npy')
+    # ----------------- Dataset Preparation -----------------
+    IMAGE_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Preprocessing/data/Image/' # You should set your own paths here to the correct Preprocessing directory.
+    MASK_DIR = '/dcs/22/u2202609/year_3/cs310/Project/Preprocessing/data/Mask/'
+    meta = pd.read_csv('/dcs/22/u2202609/year_3/cs310/Project/Preprocessing/csv/meta.csv')
+
+    # Attach absolute file paths
+    meta['original_image'] = meta['original_image'].apply(lambda x: IMAGE_DIR + x + '.npy')
+    meta['mask_image'] = meta['mask_image'].apply(lambda x: MASK_DIR + x + '.npy')
 
     all_meta = meta[meta['data_split'].isin(['Train', 'Validation'])].reset_index(drop=True)
 
-    # Check for existing checkpoint
+    # ----------------- Checkpoint Loading -----------------
     checkpoint_filename = f'model_outputs/{file_name}/checkpoint.pth'
     log_filename = f'model_outputs/{file_name}/log.csv'
 
-    # Initialize values for starting epoch and best dice score
     dist.barrier()
+
     if os.path.exists(checkpoint_filename):
         print(f"=> Loading checkpoint from {checkpoint_filename}")
         start_epoch, best_dice = load_checkpoint(checkpoint_filename, model, optimizer)
-        log = pd.read_csv(log_filename)  # Load existing log if checkpoint exists
+        log = pd.read_csv(log_filename)
     else:
         start_epoch = 0
         best_dice = 0
         log = pd.DataFrame(columns=['epoch', 'lr', 'loss', 'iou', 'dice', 'val_loss', 'val_iou', 'val_dice'])
 
-
-    # Prepare the dataset for k-fold (all data combined)
+    # ----------------- Prepare K-Fold Cross Validation -----------------
     all_image_paths = list(all_meta['original_image'])
     all_mask_paths = list(all_meta['mask_image'])
 
-    
-    # Set up 5-Fold Cross Validation
     kf = KFold(n_splits=9, shuffle=True, random_state=26)
 
-    # Create a DataFrame to store averaged results across folds
-    log = pd.DataFrame(columns=['epoch', 'lr', 'loss', 'iou', 'dice', 'val_loss', 'val_iou'])
-
-    # Initialize the metric storage
-    best_dice = 0
+    torch.cuda.reset_peak_memory_stats(device)
+    epoch_start_time = time.time()
     trigger = 0
 
-    for idx, epoch in enumerate(range(start_epoch, (config['epochs']))):
-    # Initialize K-Fold
+    # ----------------- Training Loop -----------------
+    for idx, epoch in enumerate(range(start_epoch, config['epochs'])):
         if dist.get_rank() == 0:
             print(f"\nEpoch {idx}:")
-        # Initialize metric accumulators for averaging across folds
+
+        # Initialize storage for epoch metrics
         epoch_metrics = {
             'loss': torch.zeros(1).cuda(),
             'iou': torch.zeros(1).cuda(),
@@ -355,115 +444,84 @@ def main():
             'val_iou': torch.zeros(1).cuda(),
             'val_dice': torch.zeros(1).cuda()
         }
-        
-        fold_count = torch.zeros(1).cuda()  # To count the number of folds processed
-        # K-Fold Loop: Each fold gets a separate train/validation split per epoch
-        for fold, (train_idx, val_idx) in enumerate(kf.split(all_image_paths)):
+        fold_count = torch.zeros(1).cuda()
 
+        # ----------------- Fold Loop -----------------
+        for fold, (train_idx, val_idx) in enumerate(kf.split(all_image_paths)):
             if fold % dist.get_world_size() != dist.get_rank():
                 continue
-            
+
             if dist.get_rank() == 0:
                 print(f"Starting Fold {fold + 1} of {kf.get_n_splits()}")
-        
-            # Prepare train/validation sets for this fold
+
+            # Prepare train/validation datasets
             train_image_paths = [all_image_paths[i] for i in train_idx]
             train_mask_paths = [all_mask_paths[i] for i in train_idx]
             val_image_paths = [all_image_paths[i] for i in val_idx]
             val_mask_paths = [all_mask_paths[i] for i in val_idx]
 
-            # Create Dataset and Dataloaders for this fold
             train_dataset = MyLidcDataset(train_image_paths, train_mask_paths, config['augmentation'])
             val_dataset = MyLidcDataset(val_image_paths, val_mask_paths, config['augmentation'])
 
-            # Use DistributedSampler
+            # Distributed samplers
             train_sampler = DistributedSampler(train_dataset, shuffle=True, drop_last=True)
             val_sampler = DistributedSampler(val_dataset, shuffle=False, drop_last=False)
 
-
-                    # Create Dataloaders
             train_loader = torch.utils.data.DataLoader(
-                train_dataset,
-                batch_size=config['batch_size'],
-                sampler=train_sampler,  # DistributedSampler here
-                pin_memory=True,
-                drop_last=True,
-                num_workers=config['num_workers']
+                train_dataset, batch_size=config['batch_size'], sampler=train_sampler,
+                pin_memory=True, drop_last=True, num_workers=config['num_workers']
             )
             val_loader = torch.utils.data.DataLoader(
-                val_dataset,
-                batch_size=config['batch_size'],
-                sampler=val_sampler,  # DistributedSampler here
-                pin_memory=True,
-                drop_last=False,
-                num_workers=config['num_workers']
+                val_dataset, batch_size=config['batch_size'], sampler=val_sampler,
+                pin_memory=True, drop_last=False, num_workers=config['num_workers']
             )
 
-            # if dist.get_rank() == 0:
-            #     print(f"Rank {dist.get_rank()} has {len(train_sampler)} training samples and {len(val_sampler)} validation samples.")
-
-
-            # Train and validate for this fold
+            # Train and validate
             train_log = train(train_loader, model, criterion, optimizer)
-            for key in train_log.keys():
+            for key in train_log:
                 train_log[key] = reduce_mean(torch.tensor(train_log[key]).cuda()).item()
 
             val_log = validate(val_loader, model, criterion)
-
-           
-            for key in val_log.keys():
+            for key in val_log:
                 val_log[key] = reduce_mean(torch.tensor(val_log[key]).cuda()).item()
 
-            # Accumulate fold metrics for averaging
-            epoch_metrics['loss'] += torch.tensor(train_log['loss']).cuda()
-            epoch_metrics['iou'] += torch.tensor(train_log['iou']).cuda()
-            epoch_metrics['dice'] += torch.tensor(train_log['dice']).cuda()
-            epoch_metrics['val_loss'] += torch.tensor(val_log['loss']).cuda()
-            epoch_metrics['val_iou'] += torch.tensor(val_log['iou']).cuda()
-            epoch_metrics['val_dice'] += torch.tensor(val_log['dice']).cuda()
-            fold_count += 1  # Increment fold count
+            # Accumulate fold metrics
+            for key in epoch_metrics:
+                epoch_metrics[key] += torch.tensor(train_log.get(key, val_log.get(key, 0))).cuda()
 
+            fold_count += 1
             print(f"Rank {dist.get_rank()} finished Fold {fold + 1}")
 
             dist.barrier()
 
+        # Synchronize metrics across all devices
+        epoch_end_time = time.time()
+        epoch_duration = epoch_end_time - epoch_start_time
+        peak_mem_mb = torch.cuda.max_memory_allocated(device) / 1024**2
 
-        # print(dist.get_rank(), f"Rank {dist.get_rank()} completed all folds for Epoch {epoch}")
-
-        dist.barrier()
-     
-        # print(dist.get_rank(), f"Rank {dist.get_rank()} proceeding to the next epoch")
-
-        #Synchronize metrics across all GPUs
-        for key in epoch_metrics.keys():
+        for key in epoch_metrics:
             dist.all_reduce(epoch_metrics[key], op=dist.ReduceOp.SUM)
         dist.all_reduce(fold_count, op=dist.ReduceOp.SUM)
 
         avg_metrics = {key: (epoch_metrics[key] / fold_count).item() for key in epoch_metrics.keys()}
 
         if dist.get_rank() == 0:
-            print(f'Epoch [{epoch + 1}/{config["epochs"]}] - Avg Training Loss: {avg_metrics["loss"]:.4f}, Avg Training Dice: {avg_metrics["dice"]:.4f}, Avg Training IOU: {avg_metrics["iou"]:.4f}')
-        
-        # print("*"*50)
-        # print("The lenght of image: {}, mask folders: {} for train".format(len(train_image_paths),len(train_mask_paths)))
-        # print("The lenght of image: {}, mask folders: {} for validation".format(len(val_image_paths),len(val_mask_paths)))
-        # print("Ratio between Val/ Train is {:2f}".format(len(val_image_paths)/len(train_image_paths)))
-        # print("*"*50)
+            print(f'Epoch [{epoch + 1}/{config["epochs"]}] - Avg Training Loss: {avg_metrics["loss"]:.4f}, '
+                  f'Avg Dice: {avg_metrics["dice"]:.4f}, Avg IOU: {avg_metrics["iou"]:.4f}')
 
-        dist.barrier()
-
+        # ----------------- Logging -----------------
         if dist.get_rank() == 0:
-            # Load existing log if checkpoint exists
             if os.path.exists(log_filename):
                 log = pd.read_csv(log_filename)
-                last_logged_epoch = log['epoch'].max()  # Get the last logged epoch
+                last_logged_epoch = log['epoch'].max()
             else:
-                log = pd.DataFrame(columns=['epoch', 'lr', 'loss', 'iou', 'dice', 'val_loss', 'val_iou', 'val_dice'])
+                log = pd.DataFrame(columns=[
+                    'epoch', 'lr', 'loss', 'iou', 'dice',
+                    'val_loss', 'val_iou', 'val_dice',
+                    'epoch_time_s', 'peak_mem_MB'
+                ])
                 last_logged_epoch = 0
 
-        # Inside the epoch loop
-        if dist.get_rank() == 0:
-            # Only log new epochs to avoid duplication
             if epoch + 1 > last_logged_epoch:
                 new_row = {
                     'epoch': epoch + 1,
@@ -473,49 +531,46 @@ def main():
                     'dice': avg_metrics['dice'],
                     'val_loss': avg_metrics['val_loss'],
                     'val_iou': avg_metrics['val_iou'],
-                    'val_dice': avg_metrics['val_dice']
-            }
-
-            # Append the new row directly to the log DataFrame
-            log = pd.concat([log, pd.DataFrame([new_row])], ignore_index=True)
-
-            # Write the updated log to the CSV file
-            log.to_csv(log_filename, index=False, mode='w', header=True)  # Overwrite to avoid duplication
-            print(f"Epoch {epoch + 1} logged successfully.")
+                    'val_dice': avg_metrics['val_dice'],
+                    'epoch_time_s': epoch_duration,
+                    'peak_mem_MB': peak_mem_mb
+                }
+                log = pd.concat([log, pd.DataFrame([new_row])], ignore_index=True)
+                log.to_csv(log_filename, index=False)
+                print(f"Epoch {epoch + 1} logged successfully.")
 
         dist.barrier()
-        # Model saving logic
+
+        # ----------------- Model Checkpointing -----------------
         if avg_metrics['val_dice'] > best_dice:
             if dist.get_rank() == 0:
                 model_filename = f'model_outputs/{file_name}/model.pth'
                 torch.save(model.state_dict(), model_filename)
+                print("=> Best model saved (Dice improved)")
             best_dice = avg_metrics['val_dice']
             trigger = 0
-            if dist.get_rank() == 0:
-                print("=> Best model saved (Dice improved)")
         else:
             trigger += 1
 
-        #Save a checkpoint regardless of whether it's the best model
         save_checkpoint({
             'epoch': epoch + 1,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            # 'scheduler_state_dict': scheduler.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
             'best_dice': best_dice
         }, checkpoint_filename)
 
-        # Early stopping check
+        # ----------------- Early Stopping -----------------
         if trigger >= config['early_stopping']:
             if dist.get_rank() == 0:
                 print("=> Early stopping triggered")
             break
 
-        # scheduler.step()
-
+        scheduler.step()
         torch.cuda.empty_cache()
-    
+
     cleanup_ddp()
+
 
 if __name__ == '__main__':
     main()
