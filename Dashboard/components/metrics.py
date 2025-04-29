@@ -1,3 +1,7 @@
+# -------------------------------------------------------
+# Metrics Calculation, Color Grading, and Statistical Testing Utilities
+# -------------------------------------------------------
+
 import pandas as pd
 import streamlit as st
 import torch
@@ -9,15 +13,22 @@ from statsmodels.formula.api import ols
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 from pathlib import Path
 
-# Add Segmentation directory to sys.path
+# -------------------------------------------------------
+# Add Segmentation directory to sys.path for custom metric imports
+# -------------------------------------------------------
 SEGMENTATION_DIR = Path(__file__).resolve().parents[2] / "Segmentation"
 sys.path.append(str(SEGMENTATION_DIR))
 
-# Import dice_coef and iou_score from Segmentation.metrics
+# -------------------------------------------------------
+# Import metrics functions from Segmentation module
+# -------------------------------------------------------
 from metrics import dice_coef2, iou_score, calculate_precision, calculate_recall, calculate_fpps
 
-# Define color grading and contextual descriptions
+# -------------------------------------------------------
+# Slice-level Color Grading and Descriptions
+# -------------------------------------------------------
 def get_color_and_description_slice(metric_name, score):
+    """Return background color and description based on slice-level Dice or IoU score."""
     if metric_name == "Dice":
         if score >= 0.7:
             color = "background-color: #2ECC71; color: white;"  # Green
@@ -44,54 +55,57 @@ def get_color_and_description_slice(metric_name, score):
         else:
             color = "background-color: #E74C3C; color: white;"  # Red
             description = "Poor: Minimal overlap; the model failed to predict accurately."
-    
+
     return color, description
 
+# -------------------------------------------------------
+# Display Dice and IoU Scores for a Single Slice
+# -------------------------------------------------------
 def display_scores_table(predicted_mask, ground_truth_mask):
-    """Display a table with dynamically calculated Dice Score and IoU Score, including descriptions."""
+    """Display a styled table with Dice and IoU scores and contextual feedback."""
     predicted_tensor = torch.tensor(predicted_mask)
     ground_truth_tensor = torch.tensor(ground_truth_mask)
 
-    # Calculate Dice and IoU scores
-    dice = dice_coef2(predicted_tensor, ground_truth_tensor).item()  # Ensure it's a Python float
+    # Calculate metrics
+    dice = dice_coef2(predicted_tensor, ground_truth_tensor).item()
     iou = iou_score(predicted_tensor, ground_truth_tensor).item()
 
-    # Prepare data with metrics, values, and descriptions
+    # Prepare table data
     metrics_data = []
     for metric_name, score in [("Dice", dice), ("IoU", iou)]:
         _, description = get_color_and_description_slice(metric_name, score)
         metrics_data.append({"Metric": metric_name, "Result": score, "Description": description})
 
-    # Convert to DataFrame
     metrics_df = pd.DataFrame(metrics_data)
 
-    # Styling function for the "Result" column
+    # Apply color formatting
     def apply_color(row):
         color, _ = get_color_and_description_slice(row["Metric"], row["Result"])
         return [color if col == "Result" else "" for col in row.index]
 
-    # Apply styling
     styled_table = metrics_df.style.format({"Result": "{:.4f}"}).apply(
         lambda row: apply_color(row), axis=1
     )
 
-    # Display the table
     st.table(styled_table)
 
-
+# -------------------------------------------------------
+# Overall-level Color Grading and Descriptions
+# -------------------------------------------------------
 def get_color_and_description_overall(metric, score):
+    """Return background color and description based on overall model metrics."""
     if metric == "Dice":
         if score >= 0.7:
-            color = "background-color: #2ECC71; color: white;"  # Green
+            color = "background-color: #2ECC71; color: white;"
             description = "Excellent segmentation performance with high overlap."
         elif 0.5 <= score < 0.7:
-            color = "background-color: #F1C40F; color: black;"  # Yellow
+            color = "background-color: #F1C40F; color: black;"
             description = "Good performance but missing finer details."
         elif 0.3 <= score < 0.5:
-            color = "background-color: #E67E22; color: white;"  # Orange
+            color = "background-color: #E67E22; color: white;"
             description = "Fair performance; significant areas are missed."
         else:
-            color = "background-color: #E74C3C; color: white;"  # Red
+            color = "background-color: #E74C3C; color: white;"
             description = "Poor performance with minimal overlap."
 
     elif metric == "IoU":
@@ -125,10 +139,10 @@ def get_color_and_description_overall(metric, score):
             description = "High recall with most true positives captured."
         elif 0.5 <= score < 0.75:
             color = "background-color: #F1C40F; color: black;"
-            description = "Moderate recall; some true positives are missed."
+            description = "Moderate recall; some true positives missed."
         else:
             color = "background-color: #E74C3C; color: white;"
-            description = "Low recall; significant true positives are missed."
+            description = "Low recall; many true positives missed."
 
     elif metric == "FPPS":
         if score <= 2.0:
@@ -141,9 +155,6 @@ def get_color_and_description_overall(metric, score):
             color = "background-color: #E74C3C; color: white;"
             description = "High false positives; potential over-segmentation."
 
-    # ----------------------------
-    # NEW: Accuracy, Specificity, F1-Score
-    # ----------------------------
     elif metric == "Accuracy":
         if score >= 0.8:
             color = "background-color: #2ECC71; color: white;"
@@ -164,7 +175,7 @@ def get_color_and_description_overall(metric, score):
             description = "High specificity; few false alarms."
         elif 0.6 <= score < 0.8:
             color = "background-color: #F1C40F; color: black;"
-            description = "Moderate specificity; false positives are noticeable."
+            description = "Moderate specificity; false positives noticeable."
         elif 0.4 <= score < 0.6:
             color = "background-color: #E67E22; color: white;"
             description = "Fair specificity; many false positives present."
@@ -181,140 +192,13 @@ def get_color_and_description_overall(metric, score):
             description = "Moderate F1-score; decent balance but can improve."
         elif 0.3 <= score < 0.5:
             color = "background-color: #E67E22; color: white;"
-            description = "Fair F1-score; the model misses or misclassifies quite a few instances."
+            description = "Fair F1-score; many missed predictions."
         else:
             color = "background-color: #E74C3C; color: white;"
-            description = "Low F1-score; struggles to get both precision and recall right."
+            description = "Low F1-score; poor precision and recall."
 
     else:
         color = ""
         description = "No description available."
 
     return color, description
-
-
-def run_t_test(series_a, series_b):
-    """
-    Performs a two-sided independent t-test between two 1D arrays of data.
-    Returns the test statistic and p-value.
-    """
-    t_stat, p_val = stats.ttest_ind(series_a, series_b, equal_var=False)
-    return t_stat, p_val
-
-def run_anova(data_dict):
-    """
-    Runs a one-way ANOVA across 3+ groups.
-    data_dict: dict where keys are group labels, values are lists/arrays of data.
-    
-    Returns:
-       - anova_results: (F-statistic, p-value)
-       - posthoc_df: a DataFrame containing post-hoc (Tukey HSD) results 
-                     if p < 0.05, otherwise None
-    """
-    # 1) Convert data_dict to a "long" DataFrame => columns=["value", "group"]
-    all_values = []
-    all_groups = []
-    for group_name, values in data_dict.items():
-        all_values.extend(values)
-        all_groups.extend([group_name]*len(values))
-
-    df_long = pd.DataFrame({"value": all_values, "group": all_groups})
-
-    # 2) Fit OLS model and run ANOVA
-    model = ols("value ~ C(group)", data=df_long).fit()
-    anova_table = sm.stats.anova_lm(model, typ=2)
-    
-    # Get F and p-value from the ANOVA table
-    F_stat = anova_table["F"][0]
-    p_val = anova_table["PR(>F)"][0]
-    
-    # 3) If ANOVA is significant, run post-hoc (Tukey HSD)
-    posthoc_df = None
-    if p_val < 0.05:
-        tukey = pairwise_tukeyhsd(endog=df_long["value"], groups=df_long["group"], alpha=0.05)
-        posthoc_df = pd.DataFrame(data=tukey.summary()[1:], columns=tukey.summary()[0])
-    
-    return (F_stat, p_val), posthoc_df
-
-def run_statistical_tests(metric_name, data_dict):
-    """
-    Main function to decide whether to run a t-test or an ANOVA+posthoc 
-    for a given metric based on how many folders/groups are in data_dict.
-
-    data_dict: { folder_name: [values_for_that_folder], ... }
-
-    Returns a dictionary or DataFrame with the relevant stats results.
-    """
-
-    n_groups = len(data_dict)
-
-    if n_groups < 2:
-        return None  # Not enough groups to compare
-
-    if n_groups == 2:
-        # Only two folders => t-test
-        group_names = list(data_dict.keys())
-        series_a = data_dict[group_names[0]]
-        series_b = data_dict[group_names[1]]
-        t_stat, p_val = run_t_test(series_a, series_b)
-        return {
-            "metric": metric_name,
-            "test": "t-test",
-            "group1": group_names[0],
-            "group2": group_names[1],
-            "t_stat": t_stat,
-            "p_value": p_val
-        }
-    else:
-        # 3+ folders => ANOVA + possible Tukey post-hoc
-        (F_stat, p_val), posthoc_df = run_anova(data_dict)
-        result = {
-            "metric": metric_name,
-            "test": "ANOVA",
-            "F_stat": F_stat,
-            "p_value": p_val,
-            "posthoc": posthoc_df  # can be None if not significant
-        }
-        return result
-    
-def display_zoom_and_annotate(base_image, zoom_factor=1.0, file_name="exported_image"):
-    """
-    Allows the user to toggle between Zoom Mode and Annotate Mode on the same image.
-    In Zoom Mode the user can pan and zoom, and in Annotate Mode they can draw on the image.
-    """
-    # Normalize and convert the base image to uint8 if necessary
-    base_image_min = base_image.min()
-    base_image_max = base_image.max() if base_image.max() != base_image_min else (base_image_min + 1)
-    base_image_normalized = (base_image - base_image_min) / (base_image_max - base_image_min)
-    base_image_uint8 = (base_image_normalized * 255).astype(np.uint8)
-
-    # Let the user choose the mode:
-    mode = st.radio("Select Mode:", ["Zoom Mode", "Annotate Mode"], key="view_mode_toggle")
-    
-    if mode == "Zoom Mode":
-        st.markdown("**Zoom Mode:** You can pan and zoom the image below.")
-        try:
-            image_zoom(base_image_uint8, mode="dragmove", size=750, zoom_factor=zoom_factor)
-        except Exception as e:
-            st.error(f"Error in zoom functionality: {e}")
-    else:
-        st.markdown("**Annotate Mode:** Draw on the image below.")
-        # Use st_canvas for annotation
-        canvas_result = st_canvas(
-            fill_color="rgba(0, 0, 0, 0)",  # transparent fill
-            stroke_width=3,
-            stroke_color="#FF0000",
-            background_image=Image.fromarray(base_image_uint8),
-            update_streamlit=True,
-            height=base_image_uint8.shape[0],
-            width=base_image_uint8.shape[1],
-            drawing_mode="freedraw",
-            display_toolbar=True,
-            key="annotation_canvas_toggle"
-        )
-        # Show the annotated image if available
-        if canvas_result.image_data is not None:
-            st.image(canvas_result.image_data, caption="Annotated Image", use_column_width=True)
-    
-    # (Optional) You could also add an export step here if needed:
-    # export_file(..., file_name)

@@ -1,50 +1,62 @@
+# -------------------------------------------------------
+# Dashboard Guide - Explainable AI Lung Nodule Segmentation
+# -------------------------------------------------------
+
 import streamlit as st
 import os
 
-# Configure the page
+# -------------------------------------------------------
+# Page Configuration
+# -------------------------------------------------------
 st.set_page_config(page_title="Dashboard Guide", layout="wide")
 
+# -------------------------------------------------------
+# Custom CSS Styling for fonts and layout
+# -------------------------------------------------------
 st.markdown("""
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
-    /* Force Poppins on every element */
+    /* Force Poppins font on all elements */
     [data-testid="stAppViewContainer"] *, [data-testid="stSidebar"] * {
         font-family: 'Poppins', sans-serif !important;
     }
+    /* Adjust block container width and padding */
     .block-container {
-        max-width: 1400px !important;  /* or 1600px, adjust to taste */
-        padding: 3rem 2rem !important; /* Adjust as needed for your taste */
+        max-width: 1400px !important;
+        padding: 3rem 2rem !important;
     }
-                /* Increase vertical spacing between nav items */
-    /* (Optional) If you want to reduce vertical margin inside sidebar expanders: */
+    /* Increase vertical spacing between sidebar expanders */
     [data-testid="stSidebar"] .streamlit-expanderHeader {
         margin: 0.2rem 0 !important;
-    }        
-    # [data-testid="stSidebarNav"] ul {
-    #     margin-top: 0.5rem; /* space above the list */
-    # }
-    [data-testid="stSidebarNav"] ul li {
-        margin-bottom: 0.2rem; /* space between items */
     }
-    /* Add some padding around each link */
+    /* Adjust sidebar navigation item spacing */
+    [data-testid="stSidebarNav"] ul li {
+        margin-bottom: 0.2rem;
+    }
+    /* Add padding around sidebar links */
     [data-testid="stSidebarNav"] ul li a {
         padding: 0.3rem 1rem; 
         border-radius: 4px;
     }
-            /* Increase spacing before h2 headings in the sidebar */
+    /* Increase spacing before h2 headings in sidebar */
     [data-testid="stSidebar"] h2 {
         margin-bottom: 1rem !important;
     }      
     </style>
     """, unsafe_allow_html=True)
 
+# -------------------------------------------------------
+# Title and Introduction
+# -------------------------------------------------------
 st.title("Dashboard Guide")
 st.markdown("---")
 st.markdown("""
 This guide explains the key concepts, metrics, and functionality of the Lung Nodule Segmentation Dashboard. Whether you are new to machine learning or simply need a refresher on clinical metrics, this page is here to help.
 """)
 
-# Using the Dashboard Section
+# -------------------------------------------------------
+# Using the Dashboard - Main Sections Overview
+# -------------------------------------------------------
 st.header("Using the Dashboard")
 st.markdown("""
 The dashboard features a sidebar with quick access to several pages:
@@ -59,8 +71,14 @@ The dashboard features a sidebar with quick access to several pages:
   Access a help form to submit queries and view frequently asked questions (FAQ).
 """)
 
+# -------------------------------------------------------
+# Key Terminology Section
+# -------------------------------------------------------
 st.header("Key Terminology")
 
+# -------------------------------------------------------
+# Model & Segmentation Overview
+# -------------------------------------------------------
 with st.expander("Model & Segmentation Overview"):
     st.markdown("""
 **Model:**  
@@ -76,9 +94,12 @@ This helps radiologists by automatically marking potential areas of concern, str
     overview_img = os.path.join(os.path.dirname(__file__), "..", "figures", "model_segmentation.png")
     if os.path.exists(overview_img):
         st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-        st.image(overview_img, caption="Model and Segmentation Overview", use_column_width=True, width=600)
+        st.image(overview_img, caption="Model and Segmentation Overview", width=600)
         st.markdown("</div>", unsafe_allow_html=True)
 
+# -------------------------------------------------------
+# Training and Validation Curves Explanation
+# -------------------------------------------------------
 with st.expander("Training and Validation Curves & Epochs"):
     st.markdown("""
 **Training and Validation Curves** show how the model learns over time.  
@@ -91,9 +112,12 @@ A well-trained model will show both curves improving and then leveling off. If t
     curve_img = os.path.join(os.path.dirname(__file__), "..", "figures", "curve.png")
     if os.path.exists(curve_img):
         st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-        st.image(curve_img, caption="Training vs. Validation Curves", use_column_width=True, width=600)
+        st.image(curve_img, caption="Training vs. Validation Curves", width=600)
         st.markdown("</div>", unsafe_allow_html=True)
 
+# -------------------------------------------------------
+# Dice Score Explanation
+# -------------------------------------------------------
 with st.expander("Dice Score"):
     st.markdown("""
 The **Dice Score** measures the overlap between the predicted nodule area and the actual nodule area.  
@@ -106,9 +130,12 @@ For lung nodule segmentation, a Dice Score above 0.7 is generally considered goo
     dice_img = os.path.join(os.path.dirname(__file__), "..", "figures", "dice.png")
     if os.path.exists(dice_img):
         st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-        st.image(dice_img, caption="Dice Score Illustration", use_column_width=True, width=600)
+        st.image(dice_img, caption="Dice Score Illustration", width=600)
         st.markdown("</div>", unsafe_allow_html=True)
 
+# -------------------------------------------------------
+# IoU (Intersection over Union) Explanation
+# -------------------------------------------------------
 with st.expander("Intersection over Union (IoU)"):
     st.markdown("""
 **Intersection over Union (IoU)** also measures the overlap between the predicted segmentation and the actual nodule region.  
@@ -123,9 +150,12 @@ A high IoU means the model is accurately capturing the nodule without too many f
     iou_img = os.path.join(os.path.dirname(__file__), "..", "figures", "iou.png")
     if os.path.exists(iou_img):
         st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-        st.image(iou_img, caption="IoU Illustration", use_column_width=True, width=600)
+        st.image(iou_img, caption="IoU Illustration", width=600)
         st.markdown("</div>", unsafe_allow_html=True)
 
+# -------------------------------------------------------
+# Confusion Matrix and Performance Metrics Explanation
+# -------------------------------------------------------
 with st.expander("Confusion Matrix & Performance Metrics"):
     st.markdown("""
 The **Confusion Matrix** helps break down the model's predictions into four parts:
@@ -154,9 +184,12 @@ From these, we calculate several performance metrics:
     cm_img = os.path.join(os.path.dirname(__file__), "..", "figures", "confusion_matrix.png")
     if os.path.exists(cm_img):
         st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-        st.image(cm_img, caption="Confusion Matrix Example", use_column_width=True, width=600)
+        st.image(cm_img, caption="Confusion Matrix Example", width=600)
         st.markdown("</div>", unsafe_allow_html=True)
 
+# -------------------------------------------------------
+# Grad-CAM (Model Explainability) Explanation
+# -------------------------------------------------------
 with st.expander("Grad-CAM (Model Explainability)"):
     st.markdown("""
 **Grad-CAM (Gradient-weighted Class Activation Mapping)** is a technique used to visualize which parts of an image influenced the model's decision.  
@@ -170,9 +203,12 @@ This visualization helps radiologists understand and verify what the model is fo
     grad_cam_img = os.path.join(os.path.dirname(__file__), "..", "figures", "grad_cam.png")
     if os.path.exists(grad_cam_img):
         st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-        st.image(grad_cam_img, caption="Grad-CAM Heatmap", use_column_width=True, width=600)
+        st.image(grad_cam_img, caption="Grad-CAM Heatmap", width=600)
         st.markdown("</div>", unsafe_allow_html=True)
 
+# -------------------------------------------------------
+# False Positive Reduction and Clean Set Explanation
+# -------------------------------------------------------
 with st.expander("False Positive Reduction (FPR) and Clean Set"):
     st.markdown("""
 **False Positive Reduction (FPR):**  
@@ -187,7 +223,10 @@ By combining these, the dashboard ensures that only the most reliable detections
     fpr_img = os.path.join(os.path.dirname(__file__), "..", "figures", "fpr_clean_set.png")
     if os.path.exists(fpr_img):
         st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-        st.image(fpr_img, caption="FPR and Clean Set Illustration", use_column_width=True, width=600)
+        st.image(fpr_img, caption="FPR and Clean Set Illustration", width=600)
         st.markdown("</div>", unsafe_allow_html=True)
 
+# -------------------------------------------------------
+# End of Guide Page
+# -------------------------------------------------------
 st.markdown("---")

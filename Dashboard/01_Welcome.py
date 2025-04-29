@@ -1,48 +1,67 @@
+# ---------------------------------------------
+# Welcome Page - Explainable AI Lung Nodule Segmentation
+# ---------------------------------------------
+
 import streamlit as st
 import os
 
-# Configure the page
+# ---------------------------------------------
+# Page Configuration
+# ---------------------------------------------
 st.set_page_config(page_title="Welcome & About", layout="wide")
 
+# ---------------------------------------------
+# Custom CSS Styling
+# ---------------------------------------------
 st.markdown("""
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
 <style>
-/* Force Poppins on every element */
+/* Force Poppins font on all elements */
 [data-testid="stAppViewContainer"] *, [data-testid="stSidebar"] * {
     font-family: 'Poppins', sans-serif !important;
 }
+/* Adjust block container width and padding */
 .block-container {
-    max-width: 1400px !important;  /* or 1600px, adjust to taste */
+    max-width: 1400px !important;
     padding: 3rem 2rem !important;
 }
-/* Increase vertical spacing between nav items */
+/* Increase vertical spacing between sidebar items */
 [data-testid="stSidebar"] .streamlit-expanderHeader {
     margin: 0.2rem 0 !important;
 }
 [data-testid="stSidebarNav"] ul li {
     margin-bottom: 0.2rem;
 }
+/* Add padding and border radius to sidebar links */
 [data-testid="stSidebarNav"] ul li a {
     padding: 0.3rem 1rem;
     border-radius: 4px;
 }
+/* Adjust sidebar section heading margins */
 [data-testid="stSidebar"] h2 {
     margin-bottom: 1rem !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
+# ---------------------------------------------
+# Main Title
+# ---------------------------------------------
 st.title("Explainable AI Lung Nodule Segmentation Dashboard")
 st.markdown("---")
 
+# ---------------------------------------------
 # Welcome Section
+# ---------------------------------------------
 st.markdown("""
 Welcome to the Explainable AI Lung Nodule Segmentation Dashboard!  
 Please select an option from the sidebar to continue.
 """)
 st.markdown("---")
 
-# About Section
+# ---------------------------------------------
+# About Section - Project Overview
+# ---------------------------------------------
 st.header("Project Overview")
 st.markdown("""
 Lung cancer remains one of the leading causes of cancer-related deaths worldwide, making early detection essential.  
@@ -50,6 +69,9 @@ This dashboard was developed to assist radiologists by automating the segmentati
 It addresses the challenges of accurately identifying and segmenting small, often elusive nodules, providing a platform for model comparison and performance evaluation.
 """)
 
+# ---------------------------------------------
+# About Section - Key Contributions
+# ---------------------------------------------
 st.header("Key Contributions")
 st.markdown("""
 - **Automated Segmentation Models:**  
@@ -68,6 +90,9 @@ st.markdown("""
   A user-friendly interface that allows radiologists to compare models, inspect individual CT slices, and review detailed performance metrics.
 """)
 
+# ---------------------------------------------
+# About Section - Intended Use and Purpose
+# ---------------------------------------------
 st.header("Intended Use and Purpose")
 st.markdown("""
 The Lung Nodule Segmentation Dashboard is designed to:
@@ -84,5 +109,8 @@ The Lung Nodule Segmentation Dashboard is designed to:
   Use Grad-CAM visualizations and detailed evaluations to make the model's decision-making process clear and interpretable.
 """)
 
+# ---------------------------------------------
+# Final Notes
+# ---------------------------------------------
 st.markdown("---")
 st.markdown("For further technical details and operational guidance, please refer to the 'Guide' section of the dashboard.")

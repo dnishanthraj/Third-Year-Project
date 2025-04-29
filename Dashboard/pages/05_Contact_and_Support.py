@@ -1,47 +1,61 @@
+# -------------------------------------------------------
+# Contact & Support Page - Explainable AI Lung Nodule Segmentation
+# -------------------------------------------------------
+
 import streamlit as st
 import smtplib
 import os
 
-# Email configuration (Update with your credentials)
+# -------------------------------------------------------
+# Email Configuration
+# -------------------------------------------------------
+# Set your support email address here
 EMAIL_ADDRESS = "dnishanthraj@gmail.com"  # Replace with your email
-EMAIL_PASSWORD = "glqe fxeh ftez vngy"  # Use an app password if using Gmail for security
+EMAIL_PASSWORD = "..."  # Omitted for security reasons.
 
+# -------------------------------------------------------
+# Page Configuration
+# -------------------------------------------------------
 st.set_page_config(page_title="Support & FAQ", layout="wide")
 
+# -------------------------------------------------------
+# Custom CSS Styling for fonts and layout
+# -------------------------------------------------------
 st.markdown("""
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
-    /* Force Poppins on every element */
+    /* Force Poppins font on all elements */
     [data-testid="stAppViewContainer"] *, [data-testid="stSidebar"] * {
         font-family: 'Poppins', sans-serif !important;
     }
+    /* Adjust block container width and padding */
     .block-container {
-        max-width: 1400px !important;  /* or 1600px, adjust to taste */
-        padding: 3rem 2rem !important; /* Adjust as needed for your taste */
+        max-width: 1400px !important;
+        padding: 3rem 2rem !important;
     }
-                /* Increase vertical spacing between nav items */
-    /* (Optional) If you want to reduce vertical margin inside sidebar expanders: */
+    /* Increase vertical spacing between sidebar expanders */
     [data-testid="stSidebar"] .streamlit-expanderHeader {
         margin: 0.2rem 0 !important;
-    }        
-    # [data-testid="stSidebarNav"] ul {
-    #     margin-top: 0.5rem; /* space above the list */
-    # }
-    [data-testid="stSidebarNav"] ul li {
-        margin-bottom: 0.2rem; /* space between items */
     }
-    /* Add some padding around each link */
+    /* Adjust sidebar navigation item spacing */
+    [data-testid="stSidebarNav"] ul li {
+        margin-bottom: 0.2rem;
+    }
+    /* Add padding around sidebar links */
     [data-testid="stSidebarNav"] ul li a {
         padding: 0.3rem 1rem; 
         border-radius: 4px;
     }
-            /* Increase spacing before h2 headings in the sidebar */
+    /* Increase spacing before h2 headings in sidebar */
     [data-testid="stSidebar"] h2 {
         margin-bottom: 1rem !important;
     }      
     </style>
     """, unsafe_allow_html=True)
 
+# -------------------------------------------------------
+# Page Title and Introduction
+# -------------------------------------------------------
 st.title("Contact & Support")
 st.markdown("---")
 
@@ -49,6 +63,9 @@ st.markdown("""
 This page provides answers to frequently asked questions about the Lung Nodule Segmentation Dashboard and offers contact information for further assistance.
 """)
 
+# -------------------------------------------------------
+# FAQ Section
+# -------------------------------------------------------
 st.header("Frequently Asked Questions")
 
 with st.expander("What is the purpose of this dashboard?"):
@@ -76,7 +93,9 @@ with st.expander("How do I navigate the dashboard?"):
   - **Support & FAQ:** (this page) Provides help and contact information.
     """)
 
+# -------------------------------------------------------
 # Contact Form Section
+# -------------------------------------------------------
 st.header("Contact Support")
 
 st.markdown("""
@@ -84,16 +103,20 @@ If you have any questions or need further assistance, please submit your query u
 """)
 
 with st.form(key="contact_form"):
+    # Input fields for user information
     user_name = st.text_input("Your Name")
     user_email = st.text_input("Your Email", help="Provide a valid email so we can respond.")
     user_message = st.text_area("Your Message", help="Describe your issue or question in detail.")
     
+    # Submit button for the form
     submit_button = st.form_submit_button("Send Message")
 
     if submit_button:
         if user_name and user_email and user_message:
             try:
-                # Sending email
+                # -------------------------------------------------------
+                # Email Sending Logic
+                # -------------------------------------------------------
                 with smtplib.SMTP("smtp.gmail.com", 587) as server:
                     server.starttls()
                     server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
@@ -108,6 +131,9 @@ with st.form(key="contact_form"):
         else:
             st.warning("Please fill out all fields before submitting.")
 
+# -------------------------------------------------------
+# Quick Tips Section
+# -------------------------------------------------------
 st.header("Quick Tips")
 st.markdown("""
 - **Start with the Introduction:** Get a high-level overview of the project.
@@ -116,4 +142,7 @@ st.markdown("""
 - **Contact Us:** Reach out if you need additional support.
 """)
 
+# -------------------------------------------------------
+# End of Contact & Support Page
+# -------------------------------------------------------
 st.markdown("---")
